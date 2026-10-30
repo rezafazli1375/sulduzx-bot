@@ -139,32 +139,38 @@ fi
 HAS_TTY=0
 if { : </dev/tty; } 2>/dev/null; then HAS_TTY=1; fi
 
+# usage: ask "<prompt>" "<default>" <varname>
+# Reads happen in the main shell (never inside command substitution): under
+# sudo's use_pty, a read inside $(...) stops consuming input after the first call.
 ask() {
-  local prompt="$1" default="${2:-}" answer=""
+  local prompt="$1" default="${2:-}" var="$3" answer=""
   if [ "$ASSUME_YES" != "1" ] && [ "$HAS_TTY" = "1" ]; then
     if [ -n "$default" ]; then
-      read -r -p "$prompt [$default]: " answer </dev/tty || answer=""
+      printf '%s [%s]: ' "$prompt" "$default" >&2
     else
-      read -r -p "$prompt: " answer </dev/tty || answer=""
+      printf '%s: ' "$prompt" >&2
     fi
+    IFS= read -r answer </dev/tty || answer=""
   fi
-  printf '%s' "${answer:-$default}"
+  printf -v "$var" '%s' "${answer:-$default}"
 }
 
 ask_secret() {
-  local prompt="$1" answer=""
+  local prompt="$1" var="$2" answer=""
   if [ "$ASSUME_YES" != "1" ] && [ "$HAS_TTY" = "1" ]; then
-    read -r -s -p "$prompt: " answer </dev/tty || answer=""
-    printf '\n'
+    printf '%s: ' "$prompt" >&2
+    IFS= read -r -s answer </dev/tty || answer=""
+    printf '\n' >&2
   fi
-  printf '%s' "$answer"
+  printf -v "$var" '%s' "$answer"
 }
 
 confirm() {
   local prompt="$1" answer=""
   if [ "$ASSUME_YES" = "1" ]; then return 0; fi
   [ "$HAS_TTY" = "1" ] || return 1
-  read -r -p "$prompt [y/N] " answer </dev/tty || answer=""
+  printf '%s [y/N] ' "$prompt" >&2
+  IFS= read -r answer </dev/tty || answer=""
   case "$answer" in
   y | Y | yes | YES) return 0 ;;
   *) return 1 ;;
@@ -349,19 +355,25 @@ else
   echo
   echo "${C_BOLD}Bot and panel settings${C_RESET} (stored in .env)"
   BOT_TOKEN="${BOT_TOKEN:-}"
-  [ -z "$BOT_TOKEN" ] && BOT_TOKEN="$(ask 'Bot token from BotFather')"
-  BOT_USERNAME="${BOT_USERNAME:-$(ask 'Bot username (without @, optional)')}"
+  if [ -z "$BOT_TOKEN" ]; then ask 'Bot token from BotFather' '' BOT_TOKEN; fi
+  BOT_USERNAME="${BOT_USERNAME:-}"
+  if [ -z "$BOT_USERNAME" ]; then ask 'Bot username (without @, optional)' '' BOT_USERNAME; fi
   ADMIN_IDS="${ADMIN_IDS:-}"
-  [ -z "$ADMIN_IDS" ] && ADMIN_IDS="$(ask 'Numeric admin IDs (comma-separated)')"
+  if [ -z "$ADMIN_IDS" ]; then ask 'Numeric admin IDs (comma-separated)' '' ADMIN_IDS; fi
 
   echo
-  PANEL_BASE_URL="${PANEL_BASE_URL:-$(ask '3x-ui panel URL (optional, can be set later)')}"
-  PANEL_USERNAME="${PANEL_USERNAME:-$(ask '3x-ui panel username (optional)')}"
-  PANEL_PASSWORD="${PANEL_PASSWORD:-$(ask_secret '3x-ui panel password (optional)')}"
-  PANEL_INBOUND_ID="${PANEL_INBOUND_ID:-$(ask 'Inbound ID for configs' '11')}"
+  PANEL_BASE_URL="${PANEL_BASE_URL:-}"
+  if [ -z "$PANEL_BASE_URL" ]; then ask '3x-ui panel URL (optional, can be set later)' '' PANEL_BASE_URL; fi
+  PANEL_USERNAME="${PANEL_USERNAME:-}"
+  if [ -z "$PANEL_USERNAME" ]; then ask '3x-ui panel username (optional)' '' PANEL_USERNAME; fi
+  PANEL_PASSWORD="${PANEL_PASSWORD:-}"
+  if [ -z "$PANEL_PASSWORD" ]; then ask_secret '3x-ui panel password (optional)' PANEL_PASSWORD; fi
+  PANEL_INBOUND_ID="${PANEL_INBOUND_ID:-}"
+  if [ -z "$PANEL_INBOUND_ID" ]; then ask 'Inbound ID for configs' '11' PANEL_INBOUND_ID; fi
 
   echo
-  ADMIN_USERNAME="${ADMIN_USERNAME:-$(ask 'Panel admin username' 'admin')}"
+  ADMIN_USERNAME="${ADMIN_USERNAME:-}"
+  if [ -z "$ADMIN_USERNAME" ]; then ask 'Panel admin username' 'admin' ADMIN_USERNAME; fi
   ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
   if [ -z "$ADMIN_PASSWORD" ]; then
     ADMIN_PASSWORD="$(gen_password)"
@@ -401,7 +413,7 @@ if [ -n "$DOMAIN" ]; then
   DOMAIN="$(printf '%s' "$DOMAIN" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
   valid_domain "$DOMAIN" || die "Invalid domain: $DOMAIN"
   if [ -z "$EMAIL" ]; then
-    EMAIL="$(ask 'Email for Let'"'"'s Encrypt')"
+    ask "Email for Let's Encrypt" '' EMAIL
   fi
   [ -z "$EMAIL" ] || valid_email "$EMAIL" || die "Invalid email: $EMAIL"
   DETECTED_PANEL_URL="https://${DOMAIN}"
