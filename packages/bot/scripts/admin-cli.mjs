@@ -31,22 +31,22 @@ async function readStdin() {
 async function resolveAdmin(username) {
   if (username) {
     const admin = await prisma.adminUser.findUnique({ where: { username } });
-    if (!admin) fail(`ادمین «${username}» پیدا نشد`);
+    if (!admin) fail(`admin "${username}" not found`);
     return admin;
   }
 
   const admins = await prisma.adminUser.findMany({ orderBy: { id: 'asc' } });
-  if (admins.length === 0) fail('هیچ حساب ادمینی وجود ندارد؛ ابتدا seed را اجرا کنید');
+  if (admins.length === 0) fail('no admin accounts exist; run the seed first');
   return admins.find((admin) => admin.role === 'SUPER_ADMIN') || admins[0];
 }
 
 function printHelp() {
-  console.log(`استفاده:
+  console.log(`Usage:
   node admin-cli.mjs list
-  node admin-cli.mjs username <نام-جدید> [--user <نام-فعلی>]
-  node admin-cli.mjs password <رمز-جدید | -> [--user <نام-فعلی>]
+  node admin-cli.mjs username <new-name> [--user <current-name>]
+  node admin-cli.mjs password <new-password | -> [--user <current-name>]
 
-اگر به‌جای رمز، - بدهید، رمز از stdin خوانده می‌شود (امن‌تر).
+Pass - instead of a password to read it from stdin (safer).
 `);
 }
 
@@ -62,12 +62,12 @@ async function main() {
   if (command === 'list') {
     const admins = await prisma.adminUser.findMany({ orderBy: { id: 'asc' } });
     if (admins.length === 0) {
-      console.log('هیچ حساب ادمینی وجود ندارد.');
+      console.log('No admin accounts exist.');
       return;
     }
     for (const admin of admins) {
       console.log(
-        `#${admin.id}  ${admin.username}  نقش=${admin.role}  فعال=${admin.isActive ? 'بله' : 'خیر'}`
+        `#${admin.id}  ${admin.username}  role=${admin.role}  active=${admin.isActive ? 'yes' : 'no'}`
       );
     }
     return;
@@ -76,17 +76,17 @@ async function main() {
   if (command === 'username') {
     const next = String(args._[1] || '').trim();
     if (!USERNAME_PATTERN.test(next)) {
-      fail('نام کاربری باید ۳ تا ۳۲ نویسه و فقط شامل حروف انگلیسی، عدد، نقطه، خط تیره و زیرخط باشد');
+      fail('username must be 3-32 chars using only letters, digits, dot, dash or underscore');
     }
 
     const admin = await resolveAdmin(args.user);
     if (next !== admin.username) {
       const duplicate = await prisma.adminUser.findUnique({ where: { username: next } });
-      if (duplicate) fail('این نام کاربری قبلاً استفاده شده است');
+      if (duplicate) fail('that username is already taken');
       await prisma.adminUser.update({ where: { id: admin.id }, data: { username: next } });
     }
 
-    console.log(`OK: نام کاربری مدیر از «${admin.username}» به «${next}» تغییر کرد.`);
+    console.log(`OK: admin username changed from "${admin.username}" to "${next}".`);
     return;
   }
 
@@ -94,7 +94,7 @@ async function main() {
     const raw = String(args._[1] || '');
     const next = raw === '-' ? await readStdin() : raw;
     if (next.length < MIN_PASSWORD_LENGTH) {
-      fail(`رمز عبور باید حداقل ${MIN_PASSWORD_LENGTH} نویسه باشد`);
+      fail(`password must be at least ${MIN_PASSWORD_LENGTH} characters`);
     }
 
     const admin = await resolveAdmin(args.user);
@@ -103,7 +103,7 @@ async function main() {
       data: { password: await bcrypt.hash(next, 10) },
     });
 
-    console.log(`OK: رمز عبور مدیر «${admin.username}» تغییر کرد.`);
+    console.log(`OK: password changed for admin "${admin.username}".`);
     return;
   }
 

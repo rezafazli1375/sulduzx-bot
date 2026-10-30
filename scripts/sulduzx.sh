@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Sulduz Cloud — منوی مدیریت روی SSH
-# نصب: install.sh این فایل را در /usr/local/bin/sulduzx قرار می‌دهد.
+# Sulduz Cloud — SSH management menu
+# install.sh installs this file as /usr/local/bin/sulduzx.
 set -uo pipefail
 
 SULDUZX_VERSION="1.0.0"
@@ -43,41 +43,41 @@ usage() {
   cat <<EOF
 ${C_BOLD}Sulduz Cloud${C_RESET} ${C_DIM}v${SULDUZX_VERSION}${C_RESET}
 
-استفاده: sulduzx [دستور]
+Usage: sulduzx [command]
 
-دستورها:
-  sulduzx                     منوی تعاملی
-  sulduzx status              وضعیت کانتینرها و سلامت API
-  sulduzx start | restart     روشن کردن / ری‌استارت سرویس‌ها
-  sulduzx stop                توقف سرویس‌ها
-  sulduzx logs                مشاهده زنده لاگ ربات
-  sulduzx username <نام>      تغییر نام کاربری مدیر پنل
-  sulduzx password            تغییر رمز عبور مدیر پنل (تعاملی یا از stdin)
-                             با گزینه --user <نام-فعلی> یک مدیر مشخص را هدف بگیرید
-  sulduzx domain              تنظیم دامنه و دریافت گواهی SSL خودکار
-  sulduzx env                 ویرایش فایل .env
-  sulduzx backup              بکاپ دستی دیتابیس
-  sulduzx update              دریافت نسخه جدید و بیلد مجدد
-  sulduzx help                همین راهنما
+Commands:
+  sulduzx                     interactive menu
+  sulduzx status              container status and API health
+  sulduzx start | restart     start / restart services
+  sulduzx stop                stop services
+  sulduzx logs                follow bot logs
+  sulduzx username <name>     change the panel admin username
+  sulduzx password            change the panel admin password (interactive or stdin)
+                              use --user <current-name> to target a specific admin
+  sulduzx domain              set up the domain and automatic SSL
+  sulduzx env                 edit the .env file
+  sulduzx backup              manual database backup
+  sulduzx update              pull latest version and rebuild
+  sulduzx help                this help
 
-گزینه‌های دستور domain:
-  --domain example.com --email you@example.com   بدون پرسش اجرا می‌شود
-  --staging        استفاده از سرور آزمایشی Let's Encrypt
-  --print-config   فقط کانفیگ Nginx را چاپ کن (بدون تغییر)
-  --dry-run        نمایش کارها بدون اعمال تغییر
-  --yes            تأیید خودکار نصب پیش‌نیازها
+domain options:
+  --domain example.com --email you@example.com   run without prompts
+  --staging        use the Let's Encrypt staging server
+  --print-config   only print the Nginx config (no changes)
+  --dry-run        show actions without applying changes
+  --yes            auto-approve prerequisite installs
 
-مسیر نصب: ${SULDUZX_DIR}
+Install path: ${SULDUZX_DIR}
 EOF
 }
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
 require_install() {
-  have docker || die "Docker نصب نیست. ابتدا install.sh را اجرا کنید."
-  [ -d "$SULDUZX_DIR" ] || die "مسیر نصب پیدا نشد: $SULDUZX_DIR"
-  [ -f "$SULDUZX_DIR/docker-compose.yml" ] || die "docker-compose.yml در $SULDUZX_DIR پیدا نشد"
-  [ -f "$SULDUZX_DIR/.env" ] || die "فایل .env در $SULDUZX_DIR پیدا نشد"
+  have docker || die "Docker is not installed. Run install.sh first."
+  [ -d "$SULDUZX_DIR" ] || die "Install path not found: $SULDUZX_DIR"
+  [ -f "$SULDUZX_DIR/docker-compose.yml" ] || die "docker-compose.yml not found in $SULDUZX_DIR"
+  [ -f "$SULDUZX_DIR/.env" ] || die ".env not found in $SULDUZX_DIR"
 }
 
 dc() {
@@ -101,7 +101,7 @@ get_env() {
 
 set_env() {
   local key="$1" value="$2" file="$SULDUZX_DIR/.env" tmp
-  [ -f "$file" ] || die "فایل .env پیدا نشد: $file"
+  [ -f "$file" ] || die ".env not found: $file"
   tmp="$(mktemp)"
   awk -v k="$key" -v v="$value" '
     index($0, k "=") == 1 { print k "=" v; found = 1; next }
@@ -134,7 +134,7 @@ confirm() {
   local prompt="$1" answer=""
   read_tty "$prompt [y/N] " answer || true
   case "$answer" in
-  y | Y | yes | YES | بله) return 0 ;;
+  y | Y | yes | YES) return 0 ;;
   *) return 1 ;;
   esac
 }
@@ -143,11 +143,11 @@ bot_running() {
   [ -n "$(dc ps --status running -q bot 2>/dev/null)" ]
 }
 
-# اجرای admin-cli داخل کانتینر؛ اگر ایمیج قدیمی باشد اسکریپت تزریق می‌شود.
+# Runs admin-cli inside the container; injects the script if the image is older.
 admin_cli() {
   local script="$SULDUZX_DIR/packages/bot/scripts/admin-cli.mjs"
-  [ -f "$script" ] || die "فایل $script پیدا نشد"
-  bot_running || die "کانتینر ربات در حال اجرا نیست. ابتدا: sulduzx start"
+  [ -f "$script" ] || die "File not found: $script"
+  bot_running || die "Bot container is not running. Run: sulduzx start"
 
   if dc exec -T bot test -f /app/scripts/admin-cli.mjs </dev/null >/dev/null 2>&1; then
     dc exec -T -w /app bot node /app/scripts/admin-cli.mjs "$@"
@@ -160,7 +160,7 @@ admin_cli() {
 
 show_status() {
   require_install
-  info "📁 مسیر نصب: $SULDUZX_DIR"
+  info "Install path: $SULDUZX_DIR"
   echo
   dc ps || true
   echo
@@ -168,28 +168,28 @@ show_status() {
   local code
   code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:3000/api/health 2>/dev/null || true)"
   if [ "$code" = "200" ]; then
-    ok "🟢 API ربات: سالم (HTTP 200)"
+    ok "Bot API: healthy (HTTP 200)"
   else
-    err "🔴 API ربات: پاسخ نامعتبر (${code:-بدون پاسخ})"
+    err "Bot API: bad response (${code:-no response})"
   fi
 
   code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:9090/ 2>/dev/null || true)"
   if [ "$code" = "200" ]; then
-    ok "🟢 پنل مدیریت محلی: سالم (HTTP 200)"
+    ok "Local admin panel: healthy (HTTP 200)"
   else
-    err "🔴 پنل مدیریت محلی: پاسخ نامعتبر (${code:-بدون پاسخ})"
+    err "Local admin panel: bad response (${code:-no response})"
   fi
 
   local panel_url
   panel_url="$(get_env ADMIN_PANEL_URL)"
-  [ -n "$panel_url" ] && info "🌐 آدرس عمومی پنل: $panel_url"
+  [ -n "$panel_url" ] && info "Public panel URL: $panel_url"
   return 0
 }
 
 cmd_start() {
   require_install
   dc up -d
-  ok "✅ سرویس‌ها روشن شدند."
+  ok "Services started."
   show_status
 }
 
@@ -197,18 +197,18 @@ cmd_restart() {
   require_install
   dc up -d
   dc restart bot admin
-  ok "✅ سرویس‌ها ری‌استارت شدند."
+  ok "Services restarted."
   show_status
 }
 
 cmd_stop() {
   require_install
-  if [ "${1:-}" != "--yes" ] && ! confirm "سرویس‌ها متوقف شوند؟"; then
-    warn "لغو شد."
+  if [ "${1:-}" != "--yes" ] && ! confirm "Stop all services?"; then
+    warn "Cancelled."
     return 0
   fi
   dc stop
-  ok "⏹ سرویس‌ها متوقف شدند. داده‌ها دست‌نخورده باقی می‌مانند."
+  ok "Services stopped. Data is left untouched."
 }
 
 cmd_logs() {
@@ -224,32 +224,32 @@ cmd_username() {
     case "$1" in
     --user)
       current="${2:-}"
-      shift 2 || die "مقدار --user داده نشده"
+      shift 2 || die "Missing value for --user"
       ;;
-    -*) die "گزینه ناشناخته: $1" ;;
+    -*) die "Unknown option: $1" ;;
     *)
       if [ -z "$next" ]; then
         next="$1"
         shift
       else
-        die "گزینه اضافی: $1"
+        die "Unexpected argument: $1"
       fi
       ;;
     esac
   done
 
   if [ -z "$next" ]; then
-    read_tty "نام کاربری جدید (۳ تا ۳۲ نویسه، حروف انگلیسی/عدد/. _ -): " next || return 1
+    read_tty "New username (3-32 chars, letters/digits/. _ -): " next || return 1
   fi
   next="$(printf '%s' "$next" | tr -d '[:space:]')"
-  [[ "$next" =~ ^[A-Za-z0-9._-]{3,32}$ ]] || die "نام کاربری نامعتبر است."
+  [[ "$next" =~ ^[A-Za-z0-9._-]{3,32}$ ]] || die "Invalid username."
   [ -n "$current" ] && script_args+=(--user "$current")
 
   if admin_cli username "$next" "${script_args[@]}"; then
     set_env ADMIN_USERNAME "$next"
-    ok "✅ نام کاربری در .env هم به‌روزرسانی شد."
+    ok "Username updated in .env as well."
   else
-    err "❌ تغییر نام کاربری انجام نشد."
+    err "Username change failed."
     return 1
   fi
 }
@@ -262,15 +262,15 @@ cmd_password() {
     case "$1" in
     --user)
       current="${2:-}"
-      shift 2 || die "مقدار --user داده نشده"
+      shift 2 || die "Missing value for --user"
       ;;
-    -*) die "گزینه ناشناخته: $1" ;;
+    -*) die "Unknown option: $1" ;;
     *)
       if [ -z "$pass" ]; then
         pass="$1"
         shift
       else
-        die "گزینه اضافی: $1"
+        die "Unexpected argument: $1"
       fi
       ;;
     esac
@@ -281,14 +281,14 @@ cmd_password() {
     if [ -t 0 ]; then
       local pass2=""
       while true; do
-        read_secret "رمز عبور جدید (حداقل ۸ نویسه): " pass
+        read_secret "New password (min 8 chars): " pass
         [ ${#pass} -ge 8 ] || {
-          warn "رمز کوتاه است."
+          warn "Password too short."
           continue
         }
-        read_secret "تکرار رمز جدید: " pass2
+        read_secret "Repeat new password: " pass2
         [ "$pass" = "$pass2" ] || {
-          warn "رمزها یکسان نیستند."
+          warn "Passwords do not match."
           continue
         }
         break
@@ -298,12 +298,12 @@ cmd_password() {
     fi
   fi
 
-  [ ${#pass} -ge 8 ] || die "رمز عبور باید حداقل ۸ نویسه باشد."
+  [ ${#pass} -ge 8 ] || die "Password must be at least 8 characters."
 
   if printf '%s' "$pass" | admin_cli password - "${script_args[@]}"; then
-    ok "✅ رمز عبور مدیر تغییر کرد. (رمز نمایش داده نمی‌شود)"
+    ok "Admin password changed. (password is not displayed)"
   else
-    err "❌ تغییر رمز عبور انجام نشد."
+    err "Password change failed."
     return 1
   fi
 }
@@ -319,7 +319,7 @@ valid_email() {
 render_nginx_conf() {
   local domain="$1"
   cat <<EOF
-# ساخته‌شده با sulduzx — پنل مدیریت سولدوز
+# Generated by sulduzx — Sulduz Cloud admin panel
 server {
     listen 80;
     listen [::]:80;
@@ -351,16 +351,16 @@ pkg_install() {
   elif have yum; then
     yum install -y "$@"
   else
-    die "مدیریت بسته پیدا نشد. بسته‌ها را دستی نصب کنید: $*"
+    die "No package manager found. Install manually: $*"
   fi
 }
 
 install_nginx() {
   local assume_yes="$1"
   if have nginx; then return 0; fi
-  warn "Nginx نصب نیست."
-  if [ "$assume_yes" != "1" ] && ! confirm "بسته Nginx نصب شود؟"; then
-    die "برای تنظیم دامنه، Nginx لازم است."
+  warn "Nginx is not installed."
+  if [ "$assume_yes" != "1" ] && ! confirm "Install the Nginx package?"; then
+    die "Nginx is required for domain setup."
   fi
   pkg_install nginx
   systemctl enable --now nginx
@@ -369,14 +369,14 @@ install_nginx() {
 install_certbot() {
   local assume_yes="$1"
   if have certbot; then return 0; fi
-  warn "certbot (برای دریافت خودکار گواهی SSL) نصب نیست."
-  if [ "$assume_yes" != "1" ] && ! confirm "بسته certbot و افزونه Nginx نصب شود؟"; then
-    die "بدون certbot امکان دریافت خودکار گواهی نیست."
+  warn "certbot (automatic SSL) is not installed."
+  if [ "$assume_yes" != "1" ] && ! confirm "Install certbot and the Nginx plugin?"; then
+    die "Automated certificates require certbot."
   fi
   pkg_install certbot python3-certbot-nginx
 }
 
-# مسیر کانفیگ Nginx: در Debian/Ubuntu از sites-available و در بقیه از conf.d
+# Nginx config path: Debian/Ubuntu use sites-available, others use conf.d
 nginx_conf_paths() {
   if [ -d /etc/nginx/sites-available ]; then
     printf '%s\n%s\n' "/etc/nginx/sites-available/sulduzx" "/etc/nginx/sites-enabled/sulduzx"
@@ -392,11 +392,11 @@ cmd_domain() {
     case "$1" in
     --domain)
       domain="${2:-}"
-      shift 2 || die "مقدار --domain داده نشده"
+      shift 2 || die "Missing value for --domain"
       ;;
     --email)
       email="${2:-}"
-      shift 2 || die "مقدار --email داده نشده"
+      shift 2 || die "Missing value for --email"
       ;;
     --staging)
       staging=1
@@ -418,18 +418,18 @@ cmd_domain() {
       usage
       return 0
       ;;
-    *) die "گزینه ناشناخته: $1" ;;
+    *) die "Unknown option: $1" ;;
     esac
   done
 
   if [ -z "$domain" ]; then
-    read_tty "دامنه پنل (مثال: panel.example.com): " domain || return 1
+    read_tty "Panel domain (e.g. panel.example.com): " domain || return 1
   fi
   domain="$(printf '%s' "$domain" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
   domain="${domain#http://}"
   domain="${domain#https://}"
   domain="${domain%%/*}"
-  valid_domain "$domain" || die "دامنه نامعتبر است: $domain"
+  valid_domain "$domain" || die "Invalid domain: $domain"
 
   if [ "$print_only" = "1" ]; then
     render_nginx_conf "$domain"
@@ -437,11 +437,11 @@ cmd_domain() {
   fi
 
   if [ -z "$email" ]; then
-    read_tty "ایمیل برای Let's Encrypt (برای اطلاع‌رسانی انقضا): " email || return 1
+    read_tty "Email for Let's Encrypt (expiry notices): " email || return 1
   fi
-  valid_email "$email" || die "ایمیل نامعتبر است: $email"
+  valid_email "$email" || die "Invalid email: $email"
 
-  [ "$(id -u)" -eq 0 ] || die "برای تنظیم دامنه باید با root اجرا شود: sudo sulduzx domain"
+  [ "$(id -u)" -eq 0 ] || die "Domain setup must run as root: sudo sulduzx domain"
 
   local available enabled
   available="$(nginx_conf_paths | head -n1)"
@@ -451,14 +451,14 @@ cmd_domain() {
     info "[dry-run] Nginx: $available"
     render_nginx_conf "$domain"
     info "[dry-run] certbot --nginx -d $domain -m $email --redirect"
-    info "[dry-run] ADMIN_PANEL_URL=https://$domain در .env"
+    info "[dry-run] ADMIN_PANEL_URL=https://$domain in .env"
     return 0
   fi
 
   install_nginx "$assume_yes"
   install_certbot "$assume_yes"
 
-  info "📝 نوشتن کانفیگ Nginx (${available})..."
+  info "Writing Nginx config (${available})..."
   render_nginx_conf "$domain" >"$available"
   if [ -n "$enabled" ]; then
     mkdir -p "$(dirname "$enabled")"
@@ -467,47 +467,47 @@ cmd_domain() {
 
   if ! nginx -t; then
     [ -n "$enabled" ] && rm -f "$enabled"
-    die "کانفیگ Nginx نامعتبر است؛ فایل $available برای بررسی باقی ماند."
+    die "Invalid Nginx config; file left at $available for inspection."
   fi
   systemctl reload nginx
-  ok "✅ Nginx برای $domain تنظیم شد."
+  ok "Nginx configured for $domain."
 
-  info "🔐 دریافت گواهی SSL از Let's Encrypt..."
+  info "Requesting SSL certificate from Let's Encrypt..."
   local cert_args=(--nginx -d "$domain" --non-interactive --agree-tos -m "$email" --redirect)
   [ "$staging" = "1" ] && cert_args+=(--staging)
   if ! certbot "${cert_args[@]}"; then
-    err "دریافت گواهی ناموفق بود."
-    err "بررسی کنید دامنه به IP همین سرور اشاره کند و پورت ۸۰ از بیرون باز باشد."
+    err "Certificate request failed."
+    err "Make sure the domain points to this server and port 80 is reachable from outside."
     return 1
   fi
-  ok "✅ گواهی SSL نصب شد و HTTPS فعال است."
+  ok "SSL certificate installed; HTTPS is active."
 
   if [ -f "$SULDUZX_DIR/.env" ]; then
     set_env ADMIN_PANEL_URL "https://$domain"
-    info "♻️  اعمال آدرس پنل در کانتینر ربات..."
+    info "Applying the panel URL in the bot container..."
     dc up -d bot >/dev/null
-    ok "✅ ADMIN_PANEL_URL به https://$domain تغییر کرد."
+    ok "ADMIN_PANEL_URL set to https://$domain."
   else
-    warn "فایل .env پیدا نشد؛ ADMIN_PANEL_URL دستی تنظیم شود."
+    warn ".env not found; set ADMIN_PANEL_URL manually."
   fi
 
   echo
-  ok "🌐 پنل مدیریت: https://$domain"
-  info "برای اطمینان: curl -I https://$domain"
+  ok "Admin panel: https://$domain"
+  info "To verify: curl -I https://$domain"
 }
 
 cmd_env() {
   require_install
-  [ "$(id -u)" -eq 0 ] || die "برای ویرایش .env دسترسی root لازم است: sudo sulduzx env"
+  [ "$(id -u)" -eq 0 ] || die "Root is required to edit .env: sudo sulduzx env"
   local editor="${EDITOR:-}"
   if [ -z "$editor" ]; then
-    if have nano; then editor="nano"; elif have vi; then editor="vi"; else die "ویرایشگر nano/vi پیدا نشد."; fi
+    if have nano; then editor="nano"; elif have vi; then editor="vi"; else die "No editor found (nano/vi)."; fi
   fi
   "$editor" "$SULDUZX_DIR/.env"
   chmod 600 "$SULDUZX_DIR/.env"
-  if confirm "برای اعمال تغییرات، کانتینرها ری‌استارت شوند؟"; then
+  if confirm "Restart containers to apply the changes?"; then
     dc up -d
-    ok "✅ سرویس‌ها به‌روزرسانی شدند."
+    ok "Services updated."
   fi
 }
 
@@ -522,33 +522,33 @@ cmd_backup() {
   pgdb="$(get_env POSTGRES_DB)"
   pgdb="${pgdb:-sulduz_bot}"
 
-  info "💾 در حال گرفتن بکاپ دیتابیس..."
+  info "Creating database backup..."
   if ! dc exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' </dev/null | gzip >"$file"; then
     rm -f "$file"
-    die "بکاپ ناموفق بود."
+    die "Backup failed."
   fi
-  ok "✅ بکاپ ساخته شد: $file ($(du -h "$file" | cut -f1))"
+  ok "Backup created: $file ($(du -h "$file" | cut -f1))"
 }
 
 cmd_update() {
   require_install
-  if [ "${1:-}" != "--yes" ] && ! confirm "دریافت نسخه جدید و بیلد مجدد انجام شود؟"; then
-    warn "لغو شد."
+  if [ "${1:-}" != "--yes" ] && ! confirm "Pull the latest version and rebuild?"; then
+    warn "Cancelled."
     return 0
   fi
 
   if [ -d "$SULDUZX_DIR/.git" ]; then
-    info "⬇️  دریافت تغییرات از گیت..."
-    git -C "$SULDUZX_DIR" pull --ff-only || warn "git pull ناموفق بود؛ با نسخه فعلی ادامه می‌دهیم."
+    info "Pulling changes from git..."
+    git -C "$SULDUZX_DIR" pull --ff-only || warn "git pull failed; continuing with the current version."
   else
-    warn "مخزن گیت پیدا نشد؛ فقط بیلد مجدد انجام می‌شود."
+    warn "No git repository found; rebuilding only."
   fi
 
-  dc build bot admin || die "بیلد ناموفق بود."
-  dc up -d || die "اجرای کانتینرها ناموفق بود."
-  info "🗄  هم‌سان‌سازی ساختار دیتابیس..."
-  dc run --rm --no-deps bot npx prisma db push --skip-generate </dev/null || warn "db push ناموفق بود."
-  ok "✅ به‌روزرسانی کامل شد."
+  dc build bot admin || die "Build failed."
+  dc up -d || die "Failed to start containers."
+  info "Syncing database schema..."
+  dc run --rm --no-deps bot npx prisma db push --skip-generate </dev/null || warn "db push failed."
+  ok "Update complete."
 }
 
 menu_header() {
@@ -561,7 +561,7 @@ menu_header() {
   |____/ \__,_|_|\__,_|\__,_/___| \____|_|\___/ \__,_|\__,_|
 EOF
   printf '%s' "$C_RESET"
-  printf '%s           مدیریت سرویس سولدوز — نسخه %s%s\n\n' "$C_DIM" "$SULDUZX_VERSION" "$C_RESET"
+  printf '%s           Sulduz Cloud service manager — v%s%s\n\n' "$C_DIM" "$SULDUZX_VERSION" "$C_RESET"
 }
 
 menu() {
@@ -569,21 +569,21 @@ menu() {
     clear 2>/dev/null || true
     menu_header
     cat <<EOF
-  ${C_BOLD}1)${C_RESET} وضعیت سرویس‌ها
-  ${C_BOLD}2)${C_RESET} روشن / ری‌استارت
-  ${C_BOLD}3)${C_RESET} توقف سرویس‌ها
-  ${C_BOLD}4)${C_RESET} مشاهده لاگ‌های ربات
-  ${C_BOLD}5)${C_RESET} تغییر نام کاربری مدیر پنل
-  ${C_BOLD}6)${C_RESET} تغییر رمز عبور مدیر پنل
-  ${C_BOLD}7)${C_RESET} تنظیم دامنه و دریافت SSL خودکار
-  ${C_BOLD}8)${C_RESET} ویرایش فایل .env
-  ${C_BOLD}9)${C_RESET} بکاپ دستی دیتابیس
-  ${C_BOLD}10)${C_RESET} به‌روزرسانی و بیلد مجدد
-  ${C_BOLD}0)${C_RESET} خروج
+  ${C_BOLD}1)${C_RESET} Service status
+  ${C_BOLD}2)${C_RESET} Start / restart
+  ${C_BOLD}3)${C_RESET} Stop services
+  ${C_BOLD}4)${C_RESET} Bot logs
+  ${C_BOLD}5)${C_RESET} Change panel admin username
+  ${C_BOLD}6)${C_RESET} Change panel admin password
+  ${C_BOLD}7)${C_RESET} Set domain and automatic SSL
+  ${C_BOLD}8)${C_RESET} Edit .env
+  ${C_BOLD}9)${C_RESET} Manual database backup
+  ${C_BOLD}10)${C_RESET} Update and rebuild
+  ${C_BOLD}0)${C_RESET} Exit
 EOF
     echo
     local choice=""
-    read_tty "انتخاب کنید: " choice || exit 0
+    read_tty "Select an option: " choice || exit 0
     echo
     case "$choice" in
     1) show_status ;;
@@ -597,10 +597,10 @@ EOF
     9) cmd_backup ;;
     10) cmd_update ;;
     0 | q | Q) exit 0 ;;
-    *) warn "گزینه نامعتبر است." ;;
+    *) warn "Invalid option." ;;
     esac
     echo
-    read_tty "برای بازگشت به منو Enter بزنید..." _ || true
+    read_tty "Press Enter to return to the menu..." _ || true
   done
 }
 
