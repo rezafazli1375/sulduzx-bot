@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # این اسکریپت قدیمی است و فقط برای سازگاری نگه داشته شده.
-# نصب‌کننده اصلی install.sh است (تک‌دستوری، با منوی suldux).
+# نصب‌کننده اصلی install.sh است (تک‌دستوری، با منوی sulduzx).
 set -e
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"

@@ -21,8 +21,8 @@
 # ============================================================================
 set -Eeuo pipefail
 
-REPO_URL="${SULDUX_REPO:-https://github.com/rezafazli1375/sulduzx-bot.git}"
-BRANCH="${SULDUX_BRANCH:-main}"
+REPO_URL="${SULDUZX_REPO:-https://github.com/rezafazli1375/sulduzx-bot.git}"
+BRANCH="${SULDUZX_BRANCH:-main}"
 DIR="/opt/sulduz-bot"
 DOMAIN=""
 EMAIL=""
@@ -473,8 +473,8 @@ if [ "$DRY_RUN" = "1" ]; then
   info "[dry-run] docker compose up -d postgres"
   info "[dry-run] prisma db push + db:seed"
   info "[dry-run] docker compose up -d"
-  info "[dry-run] نصب /usr/local/bin/suldux"
-  [ -n "$DOMAIN" ] && info "[dry-run] suldux domain --domain $DOMAIN --email $EMAIL --yes"
+  info "[dry-run] نصب /usr/local/bin/sulduzx"
+  [ -n "$DOMAIN" ] && info "[dry-run] sulduzx domain --domain $DOMAIN --email $EMAIL --yes"
   printf '\n%s✔ بررسی --dry-run تمام شد؛ هیچ تغییری اعمال نشد.%s\n\n' "$C_GREEN" "$C_RESET"
   exit 0
 fi
@@ -516,30 +516,30 @@ done
 if [ "$PANEL_READY" = "1" ]; then
   ok "پنل مدیریت پاسخ می‌دهد."
 else
-  warn "پنل هنوز پاسخ نمی‌دهد؛ با «suldux logs» لاگ‌ها را ببینید."
+  warn "پنل هنوز پاسخ نمی‌دهد؛ با «sulduzx logs» لاگ‌ها را ببینید."
 fi
 
-# ---------------------------------------------------------------- suldux CLI
-info "نصب دستور مدیریت suldux ..."
-install -m 0755 "$DIR/scripts/suldux.sh" /usr/local/bin/suldux
-printf 'SULDUX_DIR="%s"\n' "$DIR" >/etc/suldux.conf
-chmod 644 /etc/suldux.conf
+# ---------------------------------------------------------------- sulduzx CLI
+info "نصب دستور مدیریت sulduzx ..."
+install -m 0755 "$DIR/scripts/sulduzx.sh" /usr/local/bin/sulduzx
+printf 'SULDUZX_DIR="%s"\n' "$DIR" >/etc/sulduzx.conf
+chmod 644 /etc/sulduzx.conf
 cat >/etc/profile.d/99-sulduz-menu.sh <<'EOF'
-if [ -n "${PS1:-}" ] && [ -t 0 ] && command -v suldux >/dev/null 2>&1; then
-  echo "برای مدیریت سرویس سولدوز دستور «suldux» را بزنید."
+if [ -n "${PS1:-}" ] && [ -t 0 ] && command -v sulduzx >/dev/null 2>&1; then
+  echo "برای مدیریت سرویس سولدوز دستور «sulduzx» را بزنید."
 fi
 EOF
 chmod 644 /etc/profile.d/99-sulduz-menu.sh
-ok "دستور suldux نصب شد."
+ok "دستور sulduzx نصب شد."
 
 # ---------------------------------------------------------------- domain/SSL
 if [ "$NO_SSL" != "1" ] && [ -n "$DOMAIN" ] && [ -n "$EMAIL" ]; then
   echo
   info "تنظیم دامنه و دریافت گواهی SSL ..."
-  if /usr/local/bin/suldux domain --domain "$DOMAIN" --email "$EMAIL" --yes; then
+  if /usr/local/bin/sulduzx domain --domain "$DOMAIN" --email "$EMAIL" --yes; then
     ok "HTTPS فعال شد."
   else
-    warn "تنظیم دامنه/SSL ناموفق بود. بعداً از منوی «suldux» گزینه ۷ را اجرا کنید."
+    warn "تنظیم دامنه/SSL ناموفق بود. بعداً از منوی «sulduzx» گزینه ۷ را اجرا کنید."
   fi
 fi
 
@@ -554,8 +554,8 @@ printf '  %sپنل مدیریت:%s %s\n' "$C_BOLD" "$C_RESET" "$PANEL_URL"
 printf '  %sنام کاربری:%s %s\n' "$C_BOLD" "$C_RESET" "$ADMIN_USERNAME"
 printf '  %sرمز عبور:%s %s\n' "$C_BOLD" "$C_RESET" "$ADMIN_PASSWORD"
 printf '  %sمسیر نصب:%s %s\n' "$C_BOLD" "$C_RESET" "$DIR"
-printf '  %sمدیریت:%s suldux\n' "$C_BOLD" "$C_RESET"
+printf '  %sمدیریت:%s sulduzx\n' "$C_BOLD" "$C_RESET"
 echo
 warn "رمز عبور فقط همین یک‌بار نمایش داده می‌شود؛ آن را در جای امن ذخیره کنید."
-warn "برای تغییر نام کاربری یا رمز: suldux → گزینه ۵ یا ۶"
+warn "برای تغییر نام کاربری یا رمز: sulduzx → گزینه ۵ یا ۶"
 echo

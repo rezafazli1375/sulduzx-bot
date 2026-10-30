@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # Sulduz Cloud — منوی مدیریت روی SSH
-# نصب: install.sh این فایل را در /usr/local/bin/suldux قرار می‌دهد.
+# نصب: install.sh این فایل را در /usr/local/bin/sulduzx قرار می‌دهد.
 set -uo pipefail
 
-SULDUX_VERSION="1.0.0"
-CONFIG_FILE="/etc/suldux.conf"
+SULDUZX_VERSION="1.0.0"
+CONFIG_FILE="/etc/sulduzx.conf"
 
-if [ -z "${SULDUX_DIR:-}" ] && [ -r "$CONFIG_FILE" ]; then
+if [ -z "${SULDUZX_DIR:-}" ] && [ -r "$CONFIG_FILE" ]; then
   # shellcheck disable=SC1090
   . "$CONFIG_FILE"
 fi
-SULDUX_DIR="${SULDUX_DIR:-/opt/sulduz-bot}"
+SULDUZX_DIR="${SULDUZX_DIR:-/opt/sulduz-bot}"
 
 if [ -t 1 ] && [ "${NO_COLOR:-}" = "" ]; then
   C_RESET=$'\033[0m'
@@ -41,24 +41,24 @@ die() {
 
 usage() {
   cat <<EOF
-${C_BOLD}Sulduz Cloud${C_RESET} ${C_DIM}v${SULDUX_VERSION}${C_RESET}
+${C_BOLD}Sulduz Cloud${C_RESET} ${C_DIM}v${SULDUZX_VERSION}${C_RESET}
 
-استفاده: suldux [دستور]
+استفاده: sulduzx [دستور]
 
 دستورها:
-  suldux                     منوی تعاملی
-  suldux status              وضعیت کانتینرها و سلامت API
-  suldux start | restart     روشن کردن / ری‌استارت سرویس‌ها
-  suldux stop                توقف سرویس‌ها
-  suldux logs                مشاهده زنده لاگ ربات
-  suldux username <نام>      تغییر نام کاربری مدیر پنل
-  suldux password            تغییر رمز عبور مدیر پنل (تعاملی یا از stdin)
+  sulduzx                     منوی تعاملی
+  sulduzx status              وضعیت کانتینرها و سلامت API
+  sulduzx start | restart     روشن کردن / ری‌استارت سرویس‌ها
+  sulduzx stop                توقف سرویس‌ها
+  sulduzx logs                مشاهده زنده لاگ ربات
+  sulduzx username <نام>      تغییر نام کاربری مدیر پنل
+  sulduzx password            تغییر رمز عبور مدیر پنل (تعاملی یا از stdin)
                              با گزینه --user <نام-فعلی> یک مدیر مشخص را هدف بگیرید
-  suldux domain              تنظیم دامنه و دریافت گواهی SSL خودکار
-  suldux env                 ویرایش فایل .env
-  suldux backup              بکاپ دستی دیتابیس
-  suldux update              دریافت نسخه جدید و بیلد مجدد
-  suldux help                همین راهنما
+  sulduzx domain              تنظیم دامنه و دریافت گواهی SSL خودکار
+  sulduzx env                 ویرایش فایل .env
+  sulduzx backup              بکاپ دستی دیتابیس
+  sulduzx update              دریافت نسخه جدید و بیلد مجدد
+  sulduzx help                همین راهنما
 
 گزینه‌های دستور domain:
   --domain example.com --email you@example.com   بدون پرسش اجرا می‌شود
@@ -67,7 +67,7 @@ ${C_BOLD}Sulduz Cloud${C_RESET} ${C_DIM}v${SULDUX_VERSION}${C_RESET}
   --dry-run        نمایش کارها بدون اعمال تغییر
   --yes            تأیید خودکار نصب پیش‌نیازها
 
-مسیر نصب: ${SULDUX_DIR}
+مسیر نصب: ${SULDUZX_DIR}
 EOF
 }
 
@@ -75,19 +75,19 @@ have() { command -v "$1" >/dev/null 2>&1; }
 
 require_install() {
   have docker || die "Docker نصب نیست. ابتدا install.sh را اجرا کنید."
-  [ -d "$SULDUX_DIR" ] || die "مسیر نصب پیدا نشد: $SULDUX_DIR"
-  [ -f "$SULDUX_DIR/docker-compose.yml" ] || die "docker-compose.yml در $SULDUX_DIR پیدا نشد"
-  [ -f "$SULDUX_DIR/.env" ] || die "فایل .env در $SULDUX_DIR پیدا نشد"
+  [ -d "$SULDUZX_DIR" ] || die "مسیر نصب پیدا نشد: $SULDUZX_DIR"
+  [ -f "$SULDUZX_DIR/docker-compose.yml" ] || die "docker-compose.yml در $SULDUZX_DIR پیدا نشد"
+  [ -f "$SULDUZX_DIR/.env" ] || die "فایل .env در $SULDUZX_DIR پیدا نشد"
 }
 
 dc() {
-  docker compose --project-directory "$SULDUX_DIR" --env-file "$SULDUX_DIR/.env" "$@"
+  docker compose --project-directory "$SULDUZX_DIR" --env-file "$SULDUZX_DIR/.env" "$@"
 }
 
 get_env() {
   local key="$1" value=""
-  [ -f "$SULDUX_DIR/.env" ] || return 0
-  value="$(grep -E "^${key}=" "$SULDUX_DIR/.env" | tail -n1 | cut -d= -f2-)"
+  [ -f "$SULDUZX_DIR/.env" ] || return 0
+  value="$(grep -E "^${key}=" "$SULDUZX_DIR/.env" | tail -n1 | cut -d= -f2-)"
   case "$value" in
   \"*\")
     value="${value#\"}"
@@ -100,7 +100,7 @@ get_env() {
 }
 
 set_env() {
-  local key="$1" value="$2" file="$SULDUX_DIR/.env" tmp
+  local key="$1" value="$2" file="$SULDUZX_DIR/.env" tmp
   [ -f "$file" ] || die "فایل .env پیدا نشد: $file"
   tmp="$(mktemp)"
   awk -v k="$key" -v v="$value" '
@@ -145,9 +145,9 @@ bot_running() {
 
 # اجرای admin-cli داخل کانتینر؛ اگر ایمیج قدیمی باشد اسکریپت تزریق می‌شود.
 admin_cli() {
-  local script="$SULDUX_DIR/packages/bot/scripts/admin-cli.mjs"
+  local script="$SULDUZX_DIR/packages/bot/scripts/admin-cli.mjs"
   [ -f "$script" ] || die "فایل $script پیدا نشد"
-  bot_running || die "کانتینر ربات در حال اجرا نیست. ابتدا: suldux start"
+  bot_running || die "کانتینر ربات در حال اجرا نیست. ابتدا: sulduzx start"
 
   if dc exec -T bot test -f /app/scripts/admin-cli.mjs </dev/null >/dev/null 2>&1; then
     dc exec -T -w /app bot node /app/scripts/admin-cli.mjs "$@"
@@ -160,7 +160,7 @@ admin_cli() {
 
 show_status() {
   require_install
-  info "📁 مسیر نصب: $SULDUX_DIR"
+  info "📁 مسیر نصب: $SULDUZX_DIR"
   echo
   dc ps || true
   echo
@@ -319,7 +319,7 @@ valid_email() {
 render_nginx_conf() {
   local domain="$1"
   cat <<EOF
-# ساخته‌شده با suldux — پنل مدیریت سولدوز
+# ساخته‌شده با sulduzx — پنل مدیریت سولدوز
 server {
     listen 80;
     listen [::]:80;
@@ -379,9 +379,9 @@ install_certbot() {
 # مسیر کانفیگ Nginx: در Debian/Ubuntu از sites-available و در بقیه از conf.d
 nginx_conf_paths() {
   if [ -d /etc/nginx/sites-available ]; then
-    printf '%s\n%s\n' "/etc/nginx/sites-available/suldux" "/etc/nginx/sites-enabled/suldux"
+    printf '%s\n%s\n' "/etc/nginx/sites-available/sulduzx" "/etc/nginx/sites-enabled/sulduzx"
   else
-    printf '%s\n%s\n' "/etc/nginx/conf.d/suldux.conf" ""
+    printf '%s\n%s\n' "/etc/nginx/conf.d/sulduzx.conf" ""
   fi
 }
 
@@ -441,7 +441,7 @@ cmd_domain() {
   fi
   valid_email "$email" || die "ایمیل نامعتبر است: $email"
 
-  [ "$(id -u)" -eq 0 ] || die "برای تنظیم دامنه باید با root اجرا شود: sudo suldux domain"
+  [ "$(id -u)" -eq 0 ] || die "برای تنظیم دامنه باید با root اجرا شود: sudo sulduzx domain"
 
   local available enabled
   available="$(nginx_conf_paths | head -n1)"
@@ -482,7 +482,7 @@ cmd_domain() {
   fi
   ok "✅ گواهی SSL نصب شد و HTTPS فعال است."
 
-  if [ -f "$SULDUX_DIR/.env" ]; then
+  if [ -f "$SULDUZX_DIR/.env" ]; then
     set_env ADMIN_PANEL_URL "https://$domain"
     info "♻️  اعمال آدرس پنل در کانتینر ربات..."
     dc up -d bot >/dev/null
@@ -498,13 +498,13 @@ cmd_domain() {
 
 cmd_env() {
   require_install
-  [ "$(id -u)" -eq 0 ] || die "برای ویرایش .env دسترسی root لازم است: sudo suldux env"
+  [ "$(id -u)" -eq 0 ] || die "برای ویرایش .env دسترسی root لازم است: sudo sulduzx env"
   local editor="${EDITOR:-}"
   if [ -z "$editor" ]; then
     if have nano; then editor="nano"; elif have vi; then editor="vi"; else die "ویرایشگر nano/vi پیدا نشد."; fi
   fi
-  "$editor" "$SULDUX_DIR/.env"
-  chmod 600 "$SULDUX_DIR/.env"
+  "$editor" "$SULDUZX_DIR/.env"
+  chmod 600 "$SULDUZX_DIR/.env"
   if confirm "برای اعمال تغییرات، کانتینرها ری‌استارت شوند؟"; then
     dc up -d
     ok "✅ سرویس‌ها به‌روزرسانی شدند."
@@ -513,7 +513,7 @@ cmd_env() {
 
 cmd_backup() {
   require_install
-  local dir="$SULDUX_DIR/data/backups" stamp file pguser pgdb
+  local dir="$SULDUZX_DIR/data/backups" stamp file pguser pgdb
   mkdir -p "$dir"
   stamp="$(date +%Y%m%d-%H%M%S)"
   file="$dir/db-$stamp.sql.gz"
@@ -537,9 +537,9 @@ cmd_update() {
     return 0
   fi
 
-  if [ -d "$SULDUX_DIR/.git" ]; then
+  if [ -d "$SULDUZX_DIR/.git" ]; then
     info "⬇️  دریافت تغییرات از گیت..."
-    git -C "$SULDUX_DIR" pull --ff-only || warn "git pull ناموفق بود؛ با نسخه فعلی ادامه می‌دهیم."
+    git -C "$SULDUZX_DIR" pull --ff-only || warn "git pull ناموفق بود؛ با نسخه فعلی ادامه می‌دهیم."
   else
     warn "مخزن گیت پیدا نشد؛ فقط بیلد مجدد انجام می‌شود."
   fi
@@ -561,7 +561,7 @@ menu_header() {
   |____/ \__,_|_|\__,_|\__,_/___| \____|_|\___/ \__,_|\__,_|
 EOF
   printf '%s' "$C_RESET"
-  printf '%s           مدیریت سرویس سولدوز — نسخه %s%s\n\n' "$C_DIM" "$SULDUX_VERSION" "$C_RESET"
+  printf '%s           مدیریت سرویس سولدوز — نسخه %s%s\n\n' "$C_DIM" "$SULDUZX_VERSION" "$C_RESET"
 }
 
 menu() {
@@ -620,7 +620,7 @@ domain) cmd_domain "$@" ;;
 env) cmd_env ;;
 backup) cmd_backup ;;
 update) cmd_update "$@" ;;
-version | --version | -v) echo "suldux $SULDUX_VERSION" ;;
+version | --version | -v) echo "sulduzx $SULDUZX_VERSION" ;;
 help | --help | -h) usage ;;
 *)
   usage

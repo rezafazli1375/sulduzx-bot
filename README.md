@@ -20,7 +20,7 @@
 - **مدیریت حساب پنل**: تغییر نام کاربری و رمز عبور (`/account`)
 - **آمار کانفیگ‌ها** (`/configs`): تعداد کاربران دریافت‌کننده، کل کانفیگ‌های صادرشده و سوابق کامل هر کاربر
 - **محدودیت کاربران**: مسدود کردن دریافت کانفیگ، سهمیه اختصاصی و غیرفعال‌کردن هر یک از امکانات ربات به‌صورت جداگانه (منو، دستورها و فایل‌ها)
-- **نصب تک‌دستوری** با `install.sh` و **منوی SSH** با `suldux`: مدیریت سرویس، تغییر نام کاربری/رمز مدیر، تنظیم دامنه و دریافت خودکار SSL
+- **نصب تک‌دستوری** با `install.sh` و **منوی SSH** با `sulduzx`: مدیریت سرویس، تغییر نام کاربری/رمز مدیر، تنظیم دامنه و دریافت خودکار SSL
 - ریسپانسیو کامل برای موبایل
 
 ## ساختار پروژه
@@ -31,7 +31,7 @@
 │   ├── bot/            # ربات تلگرام + Admin API (Node.js, Express, Telegraf, Prisma)
 │   └── admin/          # پنل مدیریت (React, Vite, Tailwind)
 ├── scripts/
-│   └── suldux.sh       # منوی مدیریت SSH (نصب می‌شود به‌عنوان suldux)
+│   └── sulduzx.sh       # منوی مدیریت SSH (نصب می‌شود به‌عنوان sulduzx)
 ├── install.sh          # نصب‌کننده تک‌دستوری
 ├── docker-compose.yml
 └── .env.example
@@ -59,7 +59,7 @@ curl -fsSL https://raw.githubusercontent.com/rezafazli1375/sulduzx-bot/main/inst
 4. ساخت `.env` با `JWT_SECRET` و رمز دیتابیس تصادفی (`chmod 600`)
 5. `docker compose build` و بالا آوردن سرویس‌ها
 6. ساخت جداول دیتابیس (`prisma db push`) و درج داده اولیه (`db:seed`)
-7. نصب دستور مدیریت `suldux` در `/usr/local/bin`
+7. نصب دستور مدیریت `sulduzx` در `/usr/local/bin`
 8. در پایان، آدرس پنل + نام کاربری/رمز مدیر نمایش داده می‌شود
 
 نصب بدون پرسش و با دامنه و SSL خودکار:
@@ -80,12 +80,12 @@ curl -fsSL https://raw.githubusercontent.com/rezafazli1375/sulduzx-bot/main/inst
 | `--dry-run` | نمایش کارها بدون تغییر سیستم |
 | `--repo <url>` / `--branch <name>` | مخزن/شاخه جایگزین |
 
-## منوی SSH: `suldux`
+## منوی SSH: `sulduzx`
 
 بعد از نصب، در SSH کافی است بنویسید:
 
 ```bash
-suldux
+sulduzx
 ```
 
 ```
@@ -105,12 +105,12 @@ suldux
 همه گزینه‌ها به‌صورت دستور مستقیم هم قابل اجرا هستند:
 
 ```bash
-suldux status                 # وضعیت کانتینرها + سلامت API
-suldux username myadmin       # تغییر نام کاربری مدیر
-suldux password               # تغییر رمز مدیر (بدون نمایش روی صفحه)
-suldux domain --domain panel.example.com --email you@example.com
-suldux backup                 # بکاپ gzip در data/backups
-suldux update                 # دریافت نسخه جدید + بیلد + db push
+sulduzx status                 # وضعیت کانتینرها + سلامت API
+sulduzx username myadmin       # تغییر نام کاربری مدیر
+sulduzx password               # تغییر رمز مدیر (بدون نمایش روی صفحه)
+sulduzx domain --domain panel.example.com --email you@example.com
+sulduzx backup                 # بکاپ gzip در data/backups
+sulduzx update                 # دریافت نسخه جدید + بیلد + db push
 ```
 
 گزینه ۷ (دامنه) این کارها را خودکار انجام می‌دهد: نوشتن کانفیگ Nginx (پروکسی به `127.0.0.1:9090`)، اعتبارسنجی با `nginx -t`، دریافت گواهی Let's Encrypt با `certbot --nginx --redirect`، و به‌روزرسانی `ADMIN_PANEL_URL` در `.env`. با `--staging` می‌توانید اول گواهی آزمایشی بگیرید و با `--print-config` فقط کانفیگ را ببینید.
@@ -139,7 +139,7 @@ docker compose exec -T bot npm run db:seed
 
 - پنل مدیریت: `http://SERVER_IP:9090`
 - ورود اولیه: `ADMIN_USERNAME` / `ADMIN_PASSWORD` از `.env` (اگر تنظیم نشده باشد: `admin` / `admin123`)
-- **بعد از اولین ورود، از صفحه «حساب کاربری» یا با `suldux password` رمز را عوض کنید.**
+- **بعد از اولین ورود، از صفحه «حساب کاربری» یا با `sulduzx password` رمز را عوض کنید.**
 
 ### تنظیمات مهم `.env`
 
@@ -182,8 +182,8 @@ npm run dev        # bot + admin با هم
 - `JWT_SECRET` و رمز دیتابیس را قوی انتخاب کنید (نصب‌کننده اینها را تصادفی می‌سازد و `.env` را با دسترسی `600` ذخیره می‌کند).
 - پورت دیتابیس (`5432`) و API (`3000`) فقط به `127.0.0.1` بایند شده‌اند؛ پنل از پورت `9090` در دسترس است.
 - بکاپ‌ها حاوی داده کاربران هستند و در `./data/backups` قرار می‌گیرند (از repo خارج هستند).
-- پنل مدیریت را پشت HTTPS بگذارید: `suldux` → گزینه ۷ (Nginx + Let's Encrypt خودکار).
-- برای تغییر رمز مدیر از `suldux password` استفاده کنید؛ رمز از stdin خوانده می‌شود و در تاریخچه shell نمی‌ماند.
+- پنل مدیریت را پشت HTTPS بگذارید: `sulduzx` → گزینه ۷ (Nginx + Let's Encrypt خودکار).
+- برای تغییر رمز مدیر از `sulduzx password` استفاده کنید؛ رمز از stdin خوانده می‌شود و در تاریخچه shell نمی‌ماند.
 - حساب‌های `admin_users` در فایل بکاپ نیستند تا بازگردانی باعث قفل‌شدن دسترسی نشود.
 
 ## لایسنس

@@ -34,32 +34,32 @@ sudo BOT_TOKEN=... ADMIN_IDS=123456 ADMIN_USERNAME=admin ADMIN_PASSWORD='رمز-
 | ایمیج | `docker compose build` |
 | دیتابیس | `up -d postgres` + انتظار `pg_isready` + `prisma db push` + `db:seed` |
 | سرویس | `docker compose up -d` و بررسی پاسخ پنل روی `127.0.0.1:9090` |
-| ابزار | نصب `suldux` در `/usr/local/bin` و نوشتن `/etc/suldux.conf` |
+| ابزار | نصب `sulduzx` در `/usr/local/bin` و نوشتن `/etc/sulduzx.conf` |
 | دامنه | در صورت `--domain`: Nginx + certbot + به‌روزرسانی `ADMIN_PANEL_URL` |
 
 گزینه‌های دیگر: `--no-ssl`, `--force-env`, `--dry-run`, `--repo`, `--branch`.
 
 پورت‌ها: پنل روی `9090` (عمومی)، API روی `127.0.0.1:3000` و دیتابیس روی `127.0.0.1:5432` (فقط محلی).
 
-## ۲) منوی مدیریت: `suldux`
+## ۲) منوی مدیریت: `sulduzx`
 
-بعد از نصب، در SSH بنویسید `suldux`:
+بعد از نصب، در SSH بنویسید `sulduzx`:
 
 ```bash
-suldux            # منوی تعاملی
-suldux status     # وضعیت کانتینرها + سلامت API (/api/health)
-suldux logs       # لاگ زنده ربات
-suldux username newadmin
-suldux password   # رمز از stdin خوانده می‌شود
-suldux domain --domain panel.example.com --email you@example.com
-suldux backup     # بکاپ gzip در data/backups
-suldux update     # git pull + build + up -d + db push
+sulduzx            # منوی تعاملی
+sulduzx status     # وضعیت کانتینرها + سلامت API (/api/health)
+sulduzx logs       # لاگ زنده ربات
+sulduzx username newadmin
+sulduzx password   # رمز از stdin خوانده می‌شود
+sulduzx domain --domain panel.example.com --email you@example.com
+sulduzx backup     # بکاپ gzip در data/backups
+sulduzx update     # git pull + build + up -d + db push
 ```
 
 اگر چند حساب مدیر دارید، با `--user <نام-فعلی>` حساب مشخص را هدف بگیرید:
 
 ```bash
-suldux password --user oldadmin
+sulduzx password --user oldadmin
 ```
 
 ## ۳) نصب دستی
@@ -83,16 +83,16 @@ docker compose ps
 docker compose logs -f bot
 
 # ابزار مدیریت
-sudo install -m 0755 scripts/suldux.sh /usr/local/bin/suldux
-echo 'SULDUX_DIR="/opt/sulduz-bot"' | sudo tee /etc/suldux.conf
+sudo install -m 0755 scripts/sulduzx.sh /usr/local/bin/sulduzx
+echo 'SULDUZX_DIR="/opt/sulduz-bot"' | sudo tee /etc/sulduzx.conf
 ```
 
 ## ۴) دامنه و HTTPS
 
-ساده‌ترین راه، گزینه ۷ منوی `suldux` است. این گزینه:
+ساده‌ترین راه، گزینه ۷ منوی `sulduzx` است. این گزینه:
 
 1. Nginx را (در صورت نبود) نصب می‌کند
-2. کانفیگ زیر را در `/etc/nginx/sites-available/suldux` (یا `/etc/nginx/conf.d/suldux.conf`) می‌نویسد و فعال می‌کند
+2. کانفیگ زیر را در `/etc/nginx/sites-available/sulduzx` (یا `/etc/nginx/conf.d/sulduzx.conf`) می‌نویسد و فعال می‌کند
 3. با `nginx -t` اعتبارسنجی و `systemctl reload nginx` اعمال می‌کند
 4. با `certbot --nginx --redirect` گواهی Let's Encrypt می‌گیرد و HTTPS را فعال می‌کند
 5. `ADMIN_PANEL_URL` را در `.env` به‌روز کرده و کانتینر ربات را ری‌استارت می‌کند
@@ -125,15 +125,15 @@ server {
 
 ## ۵) پس از نصب
 
-1. با `ADMIN_USERNAME` / `ADMIN_PASSWORD` وارد پنل شوید و رمز را از صفحه **حساب کاربری** یا `suldux password` عوض کنید.
+1. با `ADMIN_USERNAME` / `ADMIN_PASSWORD` وارد پنل شوید و رمز را از صفحه **حساب کاربری** یا `sulduzx password` عوض کنید.
 2. در **تنظیمات** اطلاعات پنل 3x-ui (`PANEL_BASE_URL`, `PANEL_USERNAME`, `PANEL_PASSWORD`, `PANEL_INBOUND_ID`) را وارد کنید.
 3. در **کانال‌ها** کانال‌های عضویت اجباری را ثبت کنید (ربات باید ادمین کانال باشد).
-4. از **بکاپ و بازگردانی** یک نسخه اولیه بگیرید (یا `suldux backup`).
+4. از **بکاپ و بازگردانی** یک نسخه اولیه بگیرید (یا `sulduzx backup`).
 
 ## به‌روزرسانی
 
 ```bash
-suldux update          # یا:
+sulduzx update          # یا:
 cd /opt/sulduz-bot && git pull && docker compose build bot admin && docker compose up -d
 ```
 
@@ -143,9 +143,9 @@ cd /opt/sulduz-bot && git pull && docker compose build bot admin && docker compo
 
 | مشکل | بررسی |
 | --- | --- |
-| ربات بالا نمی‌آید | `suldux logs`؛ توکن و دسترسی اینترنت سرور به `api.telegram.org` |
-| پنل باز نمی‌شود | `suldux status` و باز بودن پورت 9090 |
-| `suldux` پیدا نمی‌شود | `install -m 0755 /opt/sulduz-bot/scripts/suldux.sh /usr/local/bin/suldux` |
+| ربات بالا نمی‌آید | `sulduzx logs`؛ توکن و دسترسی اینترنت سرور به `api.telegram.org` |
+| پنل باز نمی‌شود | `sulduzx status` و باز بودن پورت 9090 |
+| `sulduzx` پیدا نمی‌شود | `install -m 0755 /opt/sulduz-bot/scripts/sulduzx.sh /usr/local/bin/sulduzx` |
 | گواهی SSL گرفته نشد | DNS دامنه، باز بودن پورت ۸۰، و لاگ `certbot`؛ برای تست `--staging` |
 | خطای اتصال به پنل x-ui | `PANEL_BASE_URL` و دسترسی شبکه کانتینر به پنل |
 | خطای دانلودر یوتیوب | احتمالاً IP سرور محدود شده؛ از پروکسی `YTDLP_PROXY` یا تنظیم پروکسی در پنل استفاده کنید |
