@@ -149,4 +149,6 @@ cd /opt/sulduz-bot && git pull && docker compose build bot admin && docker compo
 | گواهی SSL گرفته نشد | DNS دامنه، باز بودن پورت ۸۰، و لاگ `certbot`؛ برای تست `--staging` |
 | خطای اتصال به پنل x-ui | `PANEL_BASE_URL` و دسترسی شبکه کانتینر به پنل |
 | خطای دانلودر یوتیوب | احتمالاً IP سرور محدود شده؛ از پروکسی `YTDLP_PROXY` یا تنظیم پروکسی در پنل استفاده کنید |
+| تست پروکسی V2Ray خطا می‌دهد | در تنظیمات → پروکسی دانلودر، لینک/کانفیگ را بررسی و «تست اتصال» را بزنید؛ پیام خطا معمولاً علت (DNS، پورت، TLS یا invalid uuid) را نشان می‌دهد |
+| `xray: not found` در لاگ ربات | ایمیج قدیمی است؛ `docker compose build bot` را دوباره اجرا کنید (xray-core داخل ایمیج نصب می‌شود) |
 | تبدیل Word به PDF خطا می‌دهد | حجم ایمیج بالاست و LibreOffice داخل آن است؛ `docker compose build bot` را کامل اجرا کنید |

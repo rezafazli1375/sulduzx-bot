@@ -54,6 +54,8 @@ async function main() {
     { key: 'panel_inbound_id', value: process.env.PANEL_INBOUND_ID || '11', type: 'NUMBER', description: 'شناسه اینباند کانفیگ' },
     { key: 'ytdlp_proxy_enabled', value: 'false', type: 'BOOLEAN', description: 'استفاده از پروکسی دستی دانلودر' },
     { key: 'ytdlp_proxy_url', value: '', type: 'STRING', description: 'آدرس پروکسی دستی (مثلاً socks5h://1.2.3.4:1080)' },
+    { key: 'ytdlp_proxy_mode', value: 'off', type: 'STRING', description: 'حالت پروکسی دانلودر: off, socks, v2ray' },
+    { key: 'ytdlp_v2ray_config', value: '', type: 'STRING', description: 'کانفیگ V2Ray دانلودر (vless://, vmess://, trojan://, ss:// یا JSON)' },
   ];
 
   for (const setting of defaultSettings) {

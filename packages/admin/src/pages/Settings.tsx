@@ -27,6 +27,137 @@ function SecretInput({ value, onChange }: { value: string; onChange: (value: str
   );
 }
 
+function DownloaderProxySection({
+  settings,
+  onChange,
+}: {
+  settings: any[];
+  onChange: (key: string, value: string) => void;
+}) {
+  const valueOf = (key: string) => settings.find((s) => s.key === key)?.value || '';
+  const mode = valueOf('ytdlp_proxy_mode') || 'off';
+  const url = valueOf('ytdlp_proxy_url');
+  const v2rayConfig = valueOf('ytdlp_v2ray_config');
+
+  const [testing, setTesting] = useState(false);
+  const [result, setResult] = useState<{
+    ok: boolean;
+    latencyMs?: number;
+    exitIp?: string;
+    youtubeStatus?: number;
+    error?: string;
+  } | null>(null);
+
+  const modeOptions = [
+    { value: 'off', label: 'غیرفعال (اتصال مستقیم سرور)' },
+    { value: 'socks', label: 'پروکسی SOCKS / HTTP' },
+    { value: 'v2ray', label: 'کانفیگ V2Ray' },
+  ];
+
+  const canTest = mode === 'socks' ? Boolean(url.trim()) : mode === 'v2ray' ? Boolean(v2rayConfig.trim()) : false;
+
+  const handleTest = async () => {
+    setTesting(true);
+    setResult(null);
+    try {
+      const res = await axios.post('/api/ytdlp/test', { mode, url, v2rayConfig });
+      setResult(res.data);
+    } catch (err: any) {
+      setResult({ ok: false, error: err?.response?.data?.error || 'خطا در تست اتصال' });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">حالت اتصال</label>
+        <select value={mode} onChange={(e) => onChange('ytdlp_proxy_mode', e.target.value)} className="input-field max-w-sm">
+          {modeOptions.map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+      </div>
+
+      {mode === 'socks' && (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">آدرس پروکسی</label>
+          <input
+            type="text"
+            value={url}
+            onChange={(e) => onChange('ytdlp_proxy_url', e.target.value)}
+            className="input-field font-mono text-sm"
+            placeholder="socks5h://1.2.3.4:1080"
+            dir="ltr"
+          />
+          <p className="text-xs text-gray-400 mt-2 leading-5">
+            فرمت‌های پشتیبانی‌شده: socks5h://، socks5://، socks4://، http://، https:// — اگر پیشوند ننویسید، socks5h در نظر گرفته می‌شود.
+          </p>
+        </div>
+      )}
+
+      {mode === 'v2ray' && (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">کانفیگ V2Ray</label>
+          <textarea
+            value={v2rayConfig}
+            onChange={(e) => onChange('ytdlp_v2ray_config', e.target.value)}
+            className="input-field font-mono text-xs leading-5"
+            placeholder={'vless://uuid@host:443?type=ws&security=tls&path=%2F#name\nیا vmess://...\nیا trojan://...\nیا ss://...\nیا JSON کامل xray'}
+            dir="ltr"
+            rows={7}
+          />
+          <p className="text-xs text-gray-400 mt-2 leading-5">
+            لینک vless://، vmess://، trojan://، ss:// یا کانفیگ JSON (خروجی xray) پذیرفته می‌شود. xray-core داخل کانتینر ربات اجرا می‌شود و دانلودر از طریق آن به اینترنت وصل می‌شود.
+          </p>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={handleTest}
+          disabled={!canTest || testing}
+          className="btn-secondary flex items-center gap-2 disabled:opacity-50"
+        >
+          {testing ? 'در حال تست...' : 'تست اتصال'}
+        </button>
+        <span className="text-xs text-gray-400">
+          مقادیر فعلی فرم (حتی ذخیره‌نشده) از سمت سرور تست می‌شوند.
+        </span>
+      </div>
+
+      {result && (
+        <div
+          className={`rounded-lg border p-3 text-sm ${
+            result.ok ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-700'
+          }`}
+        >
+          {result.ok ? (
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 font-medium">
+                <CheckCircle size={16} />
+                اتصال برقرار است
+              </div>
+              <div className="font-mono text-xs" dir="ltr">
+                latency: {result.latencyMs} ms
+                {result.exitIp ? ` | exit IP: ${result.exitIp}` : ''}
+                {result.youtubeStatus ? ` | youtube: ${result.youtubeStatus}` : ''}
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-start gap-2">
+              <AlertCircle size={16} className="mt-0.5 shrink-0" />
+              <span className="font-mono text-xs break-all" dir="ltr">{result.error || 'اتصال برقرار نشد'}</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Settings() {
   const [settings, setSettings] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -66,7 +197,14 @@ export default function Settings() {
     }
   };
 
-  const sections: { title: string; icon: string; color: string; hint?: string; keys: string[] }[] = [
+  const sections: {
+    title: string;
+    icon: string;
+    color: string;
+    hint?: string;
+    keys?: string[];
+    custom?: 'downloaderProxy';
+  }[] = [
     {
       title: 'عمومی',
       icon: '⚙️',
@@ -105,10 +243,10 @@ export default function Settings() {
     },
     {
       title: 'پروکسی دانلودر',
-      icon: '🧦',
+      icon: '🌐',
       color: 'from-sky-500 to-blue-600',
-      hint: 'اگر دانلود از یوتیوب/اینستاگرام روی سرور اصلی کار نکرد، پروکسی خودتان را اینجا وارد و فعال کنید.',
-      keys: ['ytdlp_proxy_enabled', 'ytdlp_proxy_url'],
+      hint: 'اگر دانلود از یوتیوب/اینستاگرام روی سرور اصلی کار نکرد، اتصال را از طریق پروکسی SOCKS یا کانفیگ V2Ray انجام دهید. با دکمه «تست اتصال» می‌توانید قبل از ذخیره، اتصال و IP خروجی را بررسی کنید.',
+      custom: 'downloaderProxy',
     },
     {
       title: 'پنل x-ui (ایجاد کانفیگ)',
@@ -227,7 +365,10 @@ export default function Settings() {
               </p>
             )}
             <div className="space-y-5">
-              {section.keys.map((key) => {
+              {section.custom === 'downloaderProxy' && (
+                <DownloaderProxySection settings={settings} onChange={handleChange} />
+              )}
+              {section.keys?.map((key) => {
                 const setting = settings.find((s) => s.key === key);
                 if (!setting) return null;
 
@@ -271,21 +412,6 @@ export default function Settings() {
                         value={setting.value}
                         onChange={(value) => handleChange(key, value)}
                       />
-                    ) : key === 'ytdlp_proxy_url' ? (
-                      <>
-                        <input
-                          type="text"
-                          value={setting.value}
-                          onChange={(e) => handleChange(key, e.target.value)}
-                          className="input-field font-mono text-sm"
-                          placeholder="socks5h://1.2.3.4:1080"
-                          dir="ltr"
-                        />
-                        <p className="text-xs text-gray-400 mt-2 leading-5">
-                          وقتی فعال باشد، دانلودر به‌جای پروکسی پیش‌فرض سرور از این پروکسی استفاده
-                          می‌کند. فرمت‌های پشتیبانی‌شده: socks5h://، socks5://، http://، https://
-                        </p>
-                      </>
                     ) : setting.type === 'NUMBER' ? (
                       <input
                         type="number"

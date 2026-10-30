@@ -16,6 +16,7 @@ import { botsRouter } from './routes/bots.js';
 import { backupRouter } from './routes/backup.js';
 import { accountRouter } from './routes/account.js';
 import { configsRouter } from './routes/configs.js';
+import { ytdlpRouter } from './routes/ytdlp.js';
 import { authenticateToken } from './middleware/auth.js';
 
 export function startServer() {
@@ -45,6 +46,7 @@ export function startServer() {
   app.use('/api/backup', backupRouter);
   app.use('/api/account', accountRouter);
   app.use('/api/configs', configsRouter);
+  app.use('/api/ytdlp', ytdlpRouter);
 
   app.listen(port, () => {
     console.log(`Admin API server running on http://localhost:${port}`);
