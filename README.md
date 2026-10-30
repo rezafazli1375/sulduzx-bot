@@ -20,6 +20,7 @@
 - **مدیریت حساب پنل**: تغییر نام کاربری و رمز عبور (`/account`)
 - **آمار کانفیگ‌ها** (`/configs`): تعداد کاربران دریافت‌کننده، کل کانفیگ‌های صادرشده و سوابق کامل هر کاربر
 - **محدودیت کاربران**: مسدود کردن دریافت کانفیگ، سهمیه اختصاصی و غیرفعال‌کردن هر یک از امکانات ربات به‌صورت جداگانه (منو، دستورها و فایل‌ها)
+- **نصب تک‌دستوری** با `install.sh` و **منوی SSH** با `suldux`: مدیریت سرویس، تغییر نام کاربری/رمز مدیر، تنظیم دامنه و دریافت خودکار SSL
 - ریسپانسیو کامل برای موبایل
 
 ## ساختار پروژه
@@ -29,6 +30,9 @@
 ├── packages/
 │   ├── bot/            # ربات تلگرام + Admin API (Node.js, Express, Telegraf, Prisma)
 │   └── admin/          # پنل مدیریت (React, Vite, Tailwind)
+├── scripts/
+│   └── suldux.sh       # منوی مدیریت SSH (نصب می‌شود به‌عنوان suldux)
+├── install.sh          # نصب‌کننده تک‌دستوری
 ├── docker-compose.yml
 └── .env.example
 ```
@@ -39,11 +43,83 @@
 - یک ربات از [@BotFather](https://t.me/BotFather)
 - پنل 3x-ui با دسترسی API (نام کاربری/رمز و شناسه اینباند)
 
-## نصب سریع
+## نصب خودکار (تک‌دستوری)
+
+روی یک سرور تازه Ubuntu/Debian (یا هر توزیع با apt/dnf/yum):
 
 ```bash
-git clone <repository-url>
-cd <repository-name>
+curl -fsSL https://raw.githubusercontent.com/rezafazli1375/sulduzx-bot/main/install.sh | sudo bash
+```
+
+نصب‌کننده به‌ترتیب این کارها را انجام می‌دهد:
+
+1. نصب پیش‌نیازها (Docker + Compose، git، curl، openssl) در صورت نبود
+2. دریافت پروژه در `/opt/sulduz-bot`
+3. پرسیدن توکن ربات، آیدی ادمین، اطلاعات پنل 3x-ui و ساخت نام کاربری/رمز مدیر
+4. ساخت `.env` با `JWT_SECRET` و رمز دیتابیس تصادفی (`chmod 600`)
+5. `docker compose build` و بالا آوردن سرویس‌ها
+6. ساخت جداول دیتابیس (`prisma db push`) و درج داده اولیه (`db:seed`)
+7. نصب دستور مدیریت `suldux` در `/usr/local/bin`
+8. در پایان، آدرس پنل + نام کاربری/رمز مدیر نمایش داده می‌شود
+
+نصب بدون پرسش و با دامنه و SSL خودکار:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/rezafazli1375/sulduzx-bot/main/install.sh | sudo bash -s -- \
+  --domain panel.example.com --email you@example.com
+```
+
+| گزینه | کار |
+| --- | --- |
+| `--dir <path>` | مسیر نصب (پیش‌فرض `/opt/sulduz-bot`) |
+| `--domain <name>` | دامنه پنل + ساخت Nginx و دریافت گواهی Let's Encrypt |
+| `--email <mail>` | ایمیل Let's Encrypt |
+| `--no-ssl` | بدون تنظیم دامنه/SSL |
+| `--yes` | بدون پرسش (مقادیر از متغیرهای محیطی: `BOT_TOKEN`, `ADMIN_IDS`, …) |
+| `--force-env` | بازنویسی `.env` موجود |
+| `--dry-run` | نمایش کارها بدون تغییر سیستم |
+| `--repo <url>` / `--branch <name>` | مخزن/شاخه جایگزین |
+
+## منوی SSH: `suldux`
+
+بعد از نصب، در SSH کافی است بنویسید:
+
+```bash
+suldux
+```
+
+```
+  1) وضعیت سرویس‌ها
+  2) روشن / ری‌استارت
+  3) توقف سرویس‌ها
+  4) مشاهده لاگ‌های ربات
+  5) تغییر نام کاربری مدیر پنل
+  6) تغییر رمز عبور مدیر پنل
+  7) تنظیم دامنه و دریافت SSL خودکار
+  8) ویرایش فایل .env
+  9) بکاپ دستی دیتابیس
+  10) به‌روزرسانی و بیلد مجدد
+  0) خروج
+```
+
+همه گزینه‌ها به‌صورت دستور مستقیم هم قابل اجرا هستند:
+
+```bash
+suldux status                 # وضعیت کانتینرها + سلامت API
+suldux username myadmin       # تغییر نام کاربری مدیر
+suldux password               # تغییر رمز مدیر (بدون نمایش روی صفحه)
+suldux domain --domain panel.example.com --email you@example.com
+suldux backup                 # بکاپ gzip در data/backups
+suldux update                 # دریافت نسخه جدید + بیلد + db push
+```
+
+گزینه ۷ (دامنه) این کارها را خودکار انجام می‌دهد: نوشتن کانفیگ Nginx (پروکسی به `127.0.0.1:9090`)، اعتبارسنجی با `nginx -t`، دریافت گواهی Let's Encrypt با `certbot --nginx --redirect`، و به‌روزرسانی `ADMIN_PANEL_URL` در `.env`. با `--staging` می‌توانید اول گواهی آزمایشی بگیرید و با `--print-config` فقط کانفیگ را ببینید.
+
+## نصب دستی
+
+```bash
+git clone https://github.com/rezafazli1375/sulduzx-bot.git /opt/sulduz-bot
+cd /opt/sulduz-bot
 
 cp .env.example .env
 nano .env          # توکن ربات، آیدی ادمین، اطلاعات پنل x-ui و JWT_SECRET را پر کنید
@@ -63,7 +139,7 @@ docker compose exec -T bot npm run db:seed
 
 - پنل مدیریت: `http://SERVER_IP:9090`
 - ورود اولیه: `ADMIN_USERNAME` / `ADMIN_PASSWORD` از `.env` (اگر تنظیم نشده باشد: `admin` / `admin123`)
-- **بعد از اولین ورود، از صفحه «حساب کاربری» رمز را عوض کنید.**
+- **بعد از اولین ورود، از صفحه «حساب کاربری» یا با `suldux password` رمز را عوض کنید.**
 
 ### تنظیمات مهم `.env`
 
@@ -103,9 +179,11 @@ npm run dev        # bot + admin با هم
 ## نکات امنیتی
 
 - فایل `.env` را هرگز commit نکنید (در `.gitignore` هست).
-- `JWT_SECRET` و رمز دیتابیس را قوی انتخاب کنید.
+- `JWT_SECRET` و رمز دیتابیس را قوی انتخاب کنید (نصب‌کننده اینها را تصادفی می‌سازد و `.env` را با دسترسی `600` ذخیره می‌کند).
+- پورت دیتابیس (`5432`) و API (`3000`) فقط به `127.0.0.1` بایند شده‌اند؛ پنل از پورت `9090` در دسترس است.
 - بکاپ‌ها حاوی داده کاربران هستند و در `./data/backups` قرار می‌گیرند (از repo خارج هستند).
-- پنل مدیریت را پشت HTTPS (Nginx/Caddy) قرار دهید.
+- پنل مدیریت را پشت HTTPS بگذارید: `suldux` → گزینه ۷ (Nginx + Let's Encrypt خودکار).
+- برای تغییر رمز مدیر از `suldux password` استفاده کنید؛ رمز از stdin خوانده می‌شود و در تاریخچه shell نمی‌ماند.
 - حساب‌های `admin_users` در فایل بکاپ نیستند تا بازگردانی باعث قفل‌شدن دسترسی نشود.
 
 ## لایسنس

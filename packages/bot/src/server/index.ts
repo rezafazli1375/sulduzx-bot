@@ -26,6 +26,9 @@ export function startServer() {
   app.use(express.json({ limit: '30mb' }));
 
   app.use('/api/auth', authRouter);
+  app.get('/api/health', (_req, res) => {
+    res.json({ ok: true, uptime: Math.round(process.uptime()) });
+  });
   app.use('/api', authenticateToken);
   app.use('/api/dashboard', dashboardRouter);
   app.use('/api/channels', channelsRouter);
