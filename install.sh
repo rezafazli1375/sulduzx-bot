@@ -87,6 +87,13 @@ Sulduz Cloud — نصب‌کننده تک‌دستوری
   --repo <url>        مخزن جایگزین
   --branch <name>     شاخه (پیش‌فرض main)
   --dry-run           نمایش کارها بدون تغییر سیستم
+
+نصب غیرتعاملی (بدون ترمینال/با متغیر محیطی):
+  BOT_TOKEN=... ADMIN_IDS=... sudo -E bash install.sh --yes --domain example.com --email you@example.com
+
+متغیرهای محیطی شناخته‌شده:
+  BOT_TOKEN, BOT_USERNAME, ADMIN_IDS, PANEL_BASE_URL, PANEL_USERNAME,
+  PANEL_PASSWORD, PANEL_INBOUND_ID, ADMIN_USERNAME, ADMIN_PASSWORD, YTDLP_PROXY
 HELP
     exit 0
     ;;
@@ -130,7 +137,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 HAS_TTY=0
-[ -r /dev/tty ] && HAS_TTY=1
+if { : </dev/tty; } 2>/dev/null; then HAS_TTY=1; fi
 
 ask() {
   local prompt="$1" default="${2:-}" answer=""
@@ -379,6 +386,10 @@ if [ "$DRY_RUN" = "1" ]; then
   [ -z "$EMAIL" ] && EMAIL="admin@example.com"
 fi
 
+if [ "$HAS_TTY" = "0" ] && [ "$ASSUME_YES" != "1" ] &&
+  { ! valid_bot_token "$BOT_TOKEN" || ! valid_admin_ids "$ADMIN_IDS"; }; then
+  die "ترمینال تعاملی در دسترس نیست. BOT_TOKEN و ADMIN_IDS را با متغیر محیطی بدهید (sudo -E bash) یا اسکریپت را در یک ترمینال SSH اجرا کنید."
+fi
 valid_bot_token "$BOT_TOKEN" || {
   [ "$DRY_RUN" = "1" ] || die "توکن ربات نامعتبر است. نمونه: 123456789:AA..."
 }

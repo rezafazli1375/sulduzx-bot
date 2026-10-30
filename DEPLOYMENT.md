@@ -22,6 +22,8 @@ sudo BOT_TOKEN=... ADMIN_IDS=123456 ADMIN_USERNAME=admin ADMIN_PASSWORD='رمز-
   bash install.sh --yes --domain panel.example.com --email you@example.com
 ```
 
+> اگر متغیرها را با `export` تنظیم کرده‌اید، `sudo -E` بزنید؛ `sudo` به‌طور پیش‌فرض محیط را پاک می‌کند. بدون ترمینال تعاملی، نصب‌کننده با پیام واضح متوقف می‌شود و BOT_TOKEN/ADMIN_IDS را از متغیر محیطی می‌خواند.
+
 نصب‌کننده چه می‌کند:
 
 | مرحله | کار |
