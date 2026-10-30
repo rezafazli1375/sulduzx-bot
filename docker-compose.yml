@@ -1,0 +1,69 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sulduz-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sulduz}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: ${POSTGRES_DB:-sulduz_bot}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - sulduz-network
+
+  bot:
+    build:
+      context: ./packages/bot
+      dockerfile: Dockerfile
+    container_name: sulduz-bot
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      BOT_TOKEN: ${BOT_TOKEN}
+      BOT_USERNAME: ${BOT_USERNAME}
+      ADMIN_IDS: ${ADMIN_IDS}
+      PANEL_BASE_URL: ${PANEL_BASE_URL}
+      PANEL_USERNAME: ${PANEL_USERNAME}
+      PANEL_PASSWORD: ${PANEL_PASSWORD}
+      PANEL_INBOUND_ID: ${PANEL_INBOUND_ID}
+      ADMIN_PANEL_URL: ${ADMIN_PANEL_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      PORT: 3000
+      NODE_ENV: production
+      TZ: ${TZ:-Asia/Tehran}
+      YTDLP_PROXY: ${YTDLP_PROXY:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "3000:3000"
+    volumes:
+      - downloads:/tmp/sulduz-downloads
+      - ./data:/app/data
+    networks:
+      - sulduz-network
+
+  admin:
+    build:
+      context: ./packages/admin
+      dockerfile: Dockerfile
+    container_name: sulduz-admin
+    restart: unless-stopped
+    depends_on:
+      - bot
+    ports:
+      - "9090:80"
+    networks:
+      - sulduz-network
+
+volumes:
+  postgres_data:
+  downloads:
+
+networks:
+  sulduz-network:
+    driver: bridge

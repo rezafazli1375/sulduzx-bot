@@ -1,0 +1,283 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Bot {
+  id        Int      @id @default(autoincrement())
+  name      String
+  token     String   @unique
+  username  String?
+  isActive  Boolean  @default(true) @map("is_active")
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  users     User[]
+  channels  Channel[]
+
+  @@map("bots")
+}
+
+model User {
+  id                Int       @id @default(autoincrement())
+  botId             Int       @map("bot_id")
+  telegramId        BigInt    @map("telegram_id")
+  username          String?
+  firstName         String?   @map("first_name")
+  lastName          String?   @map("last_name")
+  phone             String?
+  referralCode      String    @unique @map("referral_code")
+  referredBy        Int?      @map("referred_by")
+  points            Int       @default(0)
+  isBlocked         Boolean   @default(false) @map("is_blocked")
+  isAdmin           Boolean   @default(false) @map("is_admin")
+  freeAccountUsed   Boolean   @default(false) @map("free_account_used")
+  freeAccountAt     DateTime? @map("free_account_at")
+  panelUserId       Int?      @map("panel_user_id")
+  panelUserName     String?   @map("panel_user_name")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  bot               Bot       @relation(fields: [botId], references: [id])
+  referredUsers     User[]    @relation("UserReferrals")
+  referrer          User?     @relation("UserReferrals", fields: [referredBy], references: [id])
+  tickets           Ticket[]
+  channelStatuses   UserChannelStatus[]
+  downloads         Download[]
+  pointTransactions PointTransaction[]
+  configClaims      ConfigClaim[]
+
+  @@unique([botId, telegramId])
+  @@map("users")
+}
+
+model ConfigClaim {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  email     String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("config_claims")
+}
+
+model Channel {
+  id              Int       @id @default(autoincrement())
+  botId           Int       @map("bot_id")
+  channelId       BigInt    @map("channel_id")
+  channelUsername String    @map("channel_username")
+  title           String?
+  isRequired      Boolean   @default(true) @map("is_required")
+  joinOrder       Int       @default(0) @map("join_order")
+  isActive        Boolean   @default(true) @map("is_active")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  bot             Bot       @relation(fields: [botId], references: [id])
+  userStatuses    UserChannelStatus[]
+
+  @@unique([botId, channelId])
+  @@unique([botId, channelUsername])
+  @@map("channels")
+}
+
+model UserChannelStatus {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  channelId Int      @map("channel_id")
+  joined    Boolean  @default(false)
+  joinedAt  DateTime? @map("joined_at")
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel   Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, channelId])
+  @@map("user_channel_statuses")
+}
+
+model Ticket {
+  id          Int       @id @default(autoincrement())
+  userId      Int       @map("user_id")
+  subject     String
+  message     String    @db.Text
+  status      TicketStatus @default(OPEN)
+  priority    TicketPriority @default(MEDIUM)
+  adminReply  String?   @db.Text @map("admin_reply")
+  repliedBy   Int?      @map("replied_by")
+  repliedAt   DateTime? @map("replied_at")
+  closedAt    DateTime? @map("closed_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("tickets")
+}
+
+model Download {
+  id          Int       @id @default(autoincrement())
+  userId      Int       @map("user_id")
+  type        DownloadType
+  url         String    @db.Text
+  filePath    String?   @map("file_path")
+  fileSize    Int?      @map("file_size")
+  status      DownloadStatus @default(PENDING)
+  error       String?   @db.Text
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("downloads")
+}
+
+model PointTransaction {
+  id          Int       @id @default(autoincrement())
+  userId      Int       @map("user_id")
+  amount      Int
+  type        PointType
+  description String?   @db.Text
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("point_transactions")
+}
+
+model Setting {
+  id          Int       @id @default(autoincrement())
+  key         String    @unique
+  value       String    @db.Text
+  type        SettingType @default(STRING)
+  description String?
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@map("settings")
+}
+
+model MenuButton {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique
+  label     String
+  color     String   @default("none")
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("menu_buttons")
+}
+
+model BotText {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique
+  title     String
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("bot_texts")
+}
+
+model ShopItem {
+  id        Int      @id @default(autoincrement())
+  title     String
+  content   String   @db.Text
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("shop_items")
+}
+
+model MtprotoProxy {
+  id          Int       @id @default(autoincrement())
+  server      String
+  port        Int
+  secret      String
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@map("mtproto_proxies")
+}
+
+model AdminUser {
+  id          Int       @id @default(autoincrement())
+  username    String    @unique
+  password    String
+  email       String?   @unique
+  role        AdminRole @default(ADMIN)
+  isActive    Boolean   @default(true) @map("is_active")
+  lastLoginAt DateTime? @map("last_login_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@map("admin_users")
+}
+
+model AuditLog {
+  id          Int       @id @default(autoincrement())
+  adminId     Int?      @map("admin_id")
+  action      String
+  entity      String
+  entityId    String?   @map("entity_id")
+  oldValues   Json?     @map("old_values")
+  newValues   Json?     @map("new_values")
+  ipAddress   String?   @map("ip_address")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@map("audit_logs")
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum DownloadType {
+  INSTAGRAM
+  YOUTUBE
+}
+
+enum DownloadStatus {
+  PENDING
+  DOWNLOADING
+  COMPLETED
+  FAILED
+}
+
+enum PointType {
+  REFERRAL
+  DAILY_CHECKIN
+  CHANNEL_JOIN
+  BONUS
+  REDEMPTION
+}
+
+enum SettingType {
+  STRING
+  NUMBER
+  BOOLEAN
+  JSON
+}
+
+enum AdminRole {
+  SUPER_ADMIN
+  ADMIN
+  MODERATOR
+}

@@ -1,0 +1,21 @@
+{
+  "name": "sulduz-bot",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:bot\" \"npm run dev:admin\"",
+    "dev:bot": "npm run dev --workspace=packages/bot",
+    "dev:admin": "npm run dev --workspace=packages/admin",
+    "build": "npm run build --workspace=packages/bot && npm run build --workspace=packages/admin",
+    "db:generate": "npm run db:generate --workspace=packages/bot",
+    "db:push": "npm run db:push --workspace=packages/bot",
+    "db:studio": "npm run db:studio --workspace=packages/bot"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "typescript": "^5.4.5"
+  }
+}
