@@ -489,18 +489,18 @@ dc build
 info "راه‌اندازی دیتابیس..."
 dc up -d postgres
 for _ in $(seq 1 30); do
-  if dc exec -T postgres pg_isready -U "$PGUSER" -d "$PGDB" >/dev/null 2>&1; then break; fi
+  if dc exec -T postgres pg_isready -U "$PGUSER" -d "$PGDB" </dev/null >/dev/null 2>&1; then break; fi
   sleep 2
 done
 
 info "ساخت ساختار دیتابیس..."
-dc run --rm --no-deps bot npx prisma db push --skip-generate
+dc run --rm --no-deps bot npx prisma db push --skip-generate </dev/null
 
 info "درج داده‌های اولیه (ادمین و تنظیمات)..."
 dc run --rm --no-deps \
   -e ADMIN_USERNAME="$ADMIN_USERNAME" \
   -e ADMIN_PASSWORD="$ADMIN_PASSWORD" \
-  bot npm run db:seed
+  bot npm run db:seed </dev/null
 
 info "اجرای سرویس‌ها..."
 dc up -d

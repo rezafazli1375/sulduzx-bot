@@ -523,7 +523,7 @@ cmd_backup() {
   pgdb="${pgdb:-sulduz_bot}"
 
   info "💾 در حال گرفتن بکاپ دیتابیس..."
-  if ! dc exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' | gzip >"$file"; then
+  if ! dc exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' </dev/null | gzip >"$file"; then
     rm -f "$file"
     die "بکاپ ناموفق بود."
   fi
@@ -547,7 +547,7 @@ cmd_update() {
   dc build bot admin || die "بیلد ناموفق بود."
   dc up -d || die "اجرای کانتینرها ناموفق بود."
   info "🗄  هم‌سان‌سازی ساختار دیتابیس..."
-  dc run --rm --no-deps bot npx prisma db push --skip-generate || warn "db push ناموفق بود."
+  dc run --rm --no-deps bot npx prisma db push --skip-generate </dev/null || warn "db push ناموفق بود."
   ok "✅ به‌روزرسانی کامل شد."
 }
 
