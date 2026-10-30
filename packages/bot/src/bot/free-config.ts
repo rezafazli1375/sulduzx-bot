@@ -35,7 +35,19 @@ function formatDate(date: Date) {
   return date.toLocaleDateString('fa-IR');
 }
 
+const CONFIG_BLOCKED_NOTICE = '⛔️ دریافت کانفیگ برای حساب شما توسط مدیریت محدود شده است.';
+
+function resolveMaxCount(user: any, fallback: number) {
+  const override = user?.configQuotaOverride;
+  return typeof override === 'number' && Number.isInteger(override) ? override : fallback;
+}
+
 export async function handleFreeConfig(ctx: Context, user: any) {
+  if (user.configBlocked || user.configQuotaOverride === 0) {
+    await ctx.reply(CONFIG_BLOCKED_NOTICE, Markup.inlineKeyboard([[await mainMenuButton()]]));
+    return;
+  }
+
   const enabled = await getSettingBool('free_account_enabled');
   if (!enabled) {
     await ctx.reply(await getText('free.disabled'), Markup.inlineKeyboard([[await mainMenuButton()]]));
@@ -43,7 +55,7 @@ export async function handleFreeConfig(ctx: Context, user: any) {
   }
 
   const limitType = (await getSetting('free_config_limit_type')) || 'monthly';
-  const maxCount = parseInt((await getSetting('free_config_max_count')) || '1', 10);
+  const maxCount = resolveMaxCount(user, parseInt((await getSetting('free_config_max_count')) || '1', 10));
 
   if (limitType !== 'none') {
     const { start, next, name } = getPeriod(limitType);
@@ -79,8 +91,13 @@ export async function handleFreeConfig(ctx: Context, user: any) {
 }
 
 export async function confirmFreeConfig(ctx: Context, user: any) {
+  if (user.configBlocked || user.configQuotaOverride === 0) {
+    await ctx.reply(CONFIG_BLOCKED_NOTICE, Markup.inlineKeyboard([[await mainMenuButton()]]));
+    return;
+  }
+
   const limitType = (await getSetting('free_config_limit_type')) || 'monthly';
-  const maxCount = parseInt((await getSetting('free_config_max_count')) || '1', 10);
+  const maxCount = resolveMaxCount(user, parseInt((await getSetting('free_config_max_count')) || '1', 10));
 
   if (limitType !== 'none') {
     const { start, next, name } = getPeriod(limitType);

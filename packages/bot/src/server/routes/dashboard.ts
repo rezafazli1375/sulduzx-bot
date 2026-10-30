@@ -15,6 +15,8 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       totalDownloads,
       totalProxies,
       totalBots,
+      totalConfigClaims,
+      configUsers,
     ] = await Promise.all([
       prisma.user.count(),
       prisma.user.count({ where: { isBlocked: false } }),
@@ -24,6 +26,8 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       prisma.download.count({ where: { status: 'COMPLETED' } }),
       prisma.mtprotoProxy.count({ where: { isActive: true } }),
       prisma.bot.count({ where: { isActive: true } }),
+      prisma.configClaim.count(),
+      prisma.user.count({ where: { configClaims: { some: {} } } }),
     ]);
 
     const recentUsers = await prisma.user.findMany({
@@ -45,6 +49,25 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       include: { user: { select: { firstName: true, username: true } } },
     });
 
+    const recentClaims = await prisma.configClaim.findMany({
+      take: 8,
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        email: true,
+        createdAt: true,
+        user: {
+          select: {
+            id: true,
+            telegramId: true,
+            firstName: true,
+            username: true,
+            bot: { select: { name: true } },
+          },
+        },
+      },
+    });
+
     res.json({
       stats: {
         totalUsers,
@@ -55,9 +78,15 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         totalDownloads,
         totalProxies,
         totalBots,
+        totalConfigClaims,
+        configUsers,
       },
       recentUsers: recentUsers.map((u) => ({ ...u, telegramId: u.telegramId.toString() })),
       recentTickets,
+      recentClaims: recentClaims.map((claim) => ({
+        ...claim,
+        user: { ...claim.user, telegramId: claim.user.telegramId.toString() },
+      })),
     });
   } catch (error) {
     console.error('Dashboard error:', error);

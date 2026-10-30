@@ -14,6 +14,7 @@ import Texts from './pages/Texts';
 import Bots from './pages/Bots';
 import Backup from './pages/Backup';
 import Account from './pages/Account';
+import Configs from './pages/Configs';
 import Layout from './components/Layout';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -42,6 +43,7 @@ function AppRoutes() {
         <Route path="settings" element={<Settings />} />
         <Route path="proxies" element={<Proxies />} />
         <Route path="users" element={<Users />} />
+        <Route path="configs" element={<Configs />} />
         <Route path="tickets" element={<Tickets />} />
         <Route path="broadcast" element={<Broadcast />} />
         <Route path="backup" element={<Backup />} />

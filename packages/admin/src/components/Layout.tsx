@@ -17,6 +17,7 @@ import {
   Bot,
   DatabaseBackup,
   UserCog,
+  KeyRound,
   Menu as MenuIcon,
   X,
 } from 'lucide-react';
@@ -30,6 +31,7 @@ const menuItems = [
   { path: '/channels', label: 'کانال‌ها', icon: Radio },
   { path: '/proxies', label: 'پروکسی‌ها', icon: Shield },
   { path: '/users', label: 'کاربران', icon: Users },
+  { path: '/configs', label: 'کانفیگ‌ها', icon: KeyRound },
   { path: '/tickets', label: 'تیکت‌ها', icon: Ticket },
   { path: '/broadcast', label: 'پیام همگانی', icon: Megaphone },
   { path: '/settings', label: 'تنظیمات', icon: Settings },

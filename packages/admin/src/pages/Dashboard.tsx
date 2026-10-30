@@ -1,11 +1,23 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Users, Radio, Ticket, Download, Shield, TrendingUp, Activity, Bot } from 'lucide-react';
+import {
+  Users,
+  Radio,
+  Ticket,
+  Download,
+  Shield,
+  TrendingUp,
+  Activity,
+  Bot,
+  KeyRound,
+} from 'lucide-react';
+import { formatDateTime } from '../lib/features';
 
 export default function Dashboard() {
   const [stats, setStats] = useState<any>(null);
   const [recentUsers, setRecentUsers] = useState<any[]>([]);
   const [recentTickets, setRecentTickets] = useState<any[]>([]);
+  const [recentClaims, setRecentClaims] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -21,6 +33,7 @@ export default function Dashboard() {
       setStats(res.data.stats);
       setRecentUsers(res.data.recentUsers || []);
       setRecentTickets(res.data.recentTickets || []);
+      setRecentClaims(res.data.recentClaims || []);
     } catch (err: any) {
       console.error('Dashboard load error:', err);
       setError(err.response?.data?.error || 'خطا در دریافت اطلاعات داشبورد');
@@ -55,6 +68,8 @@ export default function Dashboard() {
     { label: 'کانال‌ها', value: stats.totalChannels, icon: Radio, color: 'from-purple-500 to-purple-600', bg: 'bg-purple-50', text: 'text-purple-600' },
     { label: 'تیکت‌های باز', value: stats.openTickets, icon: Ticket, color: 'from-amber-500 to-orange-600', bg: 'bg-amber-50', text: 'text-amber-600' },
     { label: 'دانلودها', value: stats.totalDownloads, icon: Download, color: 'from-cyan-500 to-cyan-600', bg: 'bg-cyan-50', text: 'text-cyan-600' },
+    { label: 'کاربران کانفیگ‌گرفته', value: stats.configUsers ?? 0, icon: KeyRound, color: 'from-teal-500 to-emerald-600', bg: 'bg-teal-50', text: 'text-teal-600' },
+    { label: 'کانفیگ‌های صادرشده', value: stats.totalConfigClaims ?? 0, icon: KeyRound, color: 'from-indigo-500 to-purple-600', bg: 'bg-indigo-50', text: 'text-indigo-600' },
     { label: 'پروکسی‌ها', value: stats.totalProxies, icon: Shield, color: 'from-pink-500 to-rose-600', bg: 'bg-pink-50', text: 'text-pink-600' },
   ];
 
@@ -168,6 +183,49 @@ export default function Dashboard() {
                   <p className="text-xs text-gray-400">
                     {ticket.user?.firstName || ticket.user?.username || 'کاربر'}
                   </p>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="card lg:col-span-2">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
+            <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+              <KeyRound size={20} className="text-indigo-500" />
+              آخرین کانفیگ‌های صادرشده
+            </h2>
+            <span className="text-xs bg-indigo-50 text-indigo-600 px-2 py-1 rounded-full">
+              {recentClaims.length} مورد
+            </span>
+          </div>
+          <div className="space-y-3">
+            {recentClaims.length === 0 ? (
+              <p className="text-gray-400 text-center py-8">هنوز کانفیگی صادر نشده است</p>
+            ) : (
+              recentClaims.map((claim) => (
+                <div
+                  key={claim.id}
+                  className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                >
+                  <div className="min-w-0">
+                    <p className="font-medium text-gray-900">
+                      {[claim.user?.firstName, claim.user?.lastName].filter(Boolean).join(' ') ||
+                        claim.user?.username ||
+                        'کاربر'}
+                    </p>
+                    <p className="text-xs text-gray-500 break-all" dir="ltr">
+                      {claim.email}
+                    </p>
+                  </div>
+                  <div className="text-left shrink-0">
+                    {claim.user?.bot?.name && (
+                      <p className="text-[11px] text-slate-500 mb-1">{claim.user.bot.name}</p>
+                    )}
+                    <p className="text-xs text-gray-400" dir="ltr">
+                      {formatDateTime(claim.createdAt)}
+                    </p>
+                  </div>
                 </div>
               ))
             )}

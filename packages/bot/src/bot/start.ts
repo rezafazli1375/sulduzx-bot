@@ -5,6 +5,7 @@ import { prisma } from '../lib/prisma.js';
 import { getText } from '../lib/texts.js';
 import { DEFAULT_MENU_BUTTONS, KNOWN_MENU_KEYS, colorPrefix } from '../lib/menu-defaults.js';
 import { chunkColumns } from '../lib/ui.js';
+import { isFeatureBlocked } from '../lib/restrictions.js';
 
 export async function handleStart(ctx: Context, user: any) {
   const forceJoin = await getSettingBool('force_join_channels');
@@ -98,7 +99,7 @@ export async function sendMainMenu(ctx: Context, user: any, greeting?: string) {
   ]);
 
   const availability: Record<string, boolean> = {
-    free_config: freeEnabled,
+    free_config: freeEnabled && !user.configBlocked,
     shop: shopEnabled,
     proxy: true,
     referral: referralEnabled,
@@ -114,7 +115,13 @@ export async function sendMainMenu(ctx: Context, user: any, greeting?: string) {
   const menuRows = await loadMenuButtons();
 
   const visibleButtons = menuRows
-    .filter((item) => item.isActive && KNOWN_MENU_KEYS.has(item.key) && availability[item.key] !== false)
+    .filter(
+      (item) =>
+        item.isActive &&
+        KNOWN_MENU_KEYS.has(item.key) &&
+        availability[item.key] !== false &&
+        !isFeatureBlocked(user, item.key)
+    )
     .map((item) => Markup.button.callback(`${colorPrefix(item.color)}${item.label}`, item.key));
 
   const keyboard = chunkColumns(visibleButtons, 2);

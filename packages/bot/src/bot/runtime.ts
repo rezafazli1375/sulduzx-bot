@@ -24,6 +24,7 @@ import {
   handleVideoToMp3,
 } from './file-convert.js';
 import { setupActionHandlers } from './actions.js';
+import { registerFeatureGuard } from '../lib/restrictions.js';
 
 export function createBotInstance(botId: number, token: string): Telegraf {
   const bot = new Telegraf(token);
@@ -32,6 +33,8 @@ export function createBotInstance(botId: number, token: string): Telegraf {
     (ctx as Context & { botId?: number }).botId = botId;
     return next();
   });
+
+  registerFeatureGuard(bot);
 
   async function getUser(ctx: Context) {
     if (!(await getSettingBool('bot_enabled'))) {
