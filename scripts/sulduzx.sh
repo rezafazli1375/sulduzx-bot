@@ -113,7 +113,7 @@ set_env() {
 
 read_tty() {
   local prompt="$1" var="$2"
-  if [ -r /dev/tty ]; then
+  if { : </dev/tty; } 2>/dev/null; then
     read -r -p "$prompt" "$var" </dev/tty
   else
     read -r -p "$prompt" "$var"
@@ -122,7 +122,7 @@ read_tty() {
 
 read_secret() {
   local prompt="$1" var="$2"
-  if [ -r /dev/tty ]; then
+  if { : </dev/tty; } 2>/dev/null; then
     read -r -s -p "$prompt" "$var" </dev/tty
   else
     read -r -s -p "$prompt" "$var"
