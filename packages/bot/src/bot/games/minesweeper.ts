@@ -28,10 +28,10 @@ interface MsSession {
 
 const sessions = new Map<string, MsSession>();
 
-// صفحه: ۴ ستون افقی × ۵ ردیف عمودی
-const ROWS = 5;
-const COLS = 4;
-const BOMB_COUNT = 4;
+// صفحه: ۶ ستون افقی × ۷ ردیف عمودی
+const ROWS = 7;
+const COLS = 6;
+const BOMB_COUNT = 8;
 
 function sessionKey(chatId: number): string {
   return `ms:${chatId}`;
@@ -187,10 +187,11 @@ export async function handleMinesweeper(ctx: Context) {
   const msg = await ctx.reply(
     `💣 *بازی مین‌روب*\n\n` +
     `🎮 ${mentionUser(fromUser.id, fromUser.first_name || 'بازیکن')} بازی را شروع کرد!\n\n` +
-    `📏 اندازه صفحه: ۴×۵ (۴ افقی، ۵ عمودی)\n` +
+    `📏 اندازه صفحه: ۶×۷ (۶ افقی، ۷ عمودی)\n` +
     `💣 تعداد بمب: ${BOMB_COUNT}\n` +
     `❤️ جان هر بازیکن: ۳\n\n` +
     `🎯 *قوانین:*\n` +
+    `• حداقل ۲ بازیکن برای شروع لازم است\n` +
     `• بعد از پیوستن بازیکنان، شروع‌کننده دکمه «▶️ شروع بازی» را می‌زند\n` +
     `• هر نوبت یک خانه را باز کنید\n` +
     `• اگر بمب پیدا کنید، یک جان از دست می‌دهید\n` +
@@ -246,8 +247,8 @@ export async function handleMinesweeperAction(ctx: Context) {
       await ctx.answerCbQuery('❌ فقط شروع‌کننده بازی می‌تواند بازی را استارت بزند.');
       return;
     }
-    if (session.players.size < 1) {
-      await ctx.answerCbQuery('❌ حداقل ۱ بازیکن نیاز است!');
+    if (session.players.size < 2) {
+      await ctx.answerCbQuery('❌ برای شروع بازی حداقل ۲ بازیکن باید پیوسته باشند!');
       return;
     }
 
@@ -404,7 +405,10 @@ async function updateMsMessage(ctx: Context, session: MsSession, showBombs: bool
 
   let statusText: string;
   if (session.status === 'waiting') {
-    statusText = `👥 *بازیکنان:* ${session.players.size}\nبرای پیوستن دکمه «🎮 پیوستن به بازی» را بزنید.\nشروع‌کننده پس از پیوستن بازیکنان، «▶️ شروع بازی» را بزند.`;
+    statusText = `👥 *بازیکنان:* ${session.players.size}\n` +
+      (session.players.size < 2
+        ? 'حداقل ۲ بازیکن لازم است — دکمه «🎮 پیوستن به بازی» را بزنید.'
+        : 'شروع‌کننده «▶️ شروع بازی» را بزند.');
   } else if (session.status === 'finished') {
     statusText = session.winner
       ? `🏆 *برنده:* ${mentionUser(session.winner.id, session.winner.name)}\n🎉 ۳۰ امتیاز دریافت شد!`

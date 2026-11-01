@@ -20,10 +20,10 @@ interface TttSession {
 
 const sessions = new Map<string, TttSession>();
 
-// صفحه: ۴ ستون افقی × ۵ ردیف عمودی — برنده: ۴ مهره پشت سر هم
-const ROWS = 5;
-const COLS = 4;
-const WIN_LENGTH = 4;
+// صفحه: ۶ ستون افقی × ۷ ردیف عمودی — برنده: ۵ مهره پشت سر هم
+const ROWS = 7;
+const COLS = 6;
+const WIN_LENGTH = 5;
 
 function sessionKey(chatId: number): string {
   return `ttt:${chatId}`;
@@ -155,8 +155,8 @@ export async function handleTicTacToe(ctx: Context) {
 
   const msg = await ctx.reply(
     `❌⭕ *بازی دوز*\n\n` +
-    `📋 صفحه: ۴×۵ (۴ افقی، ۵ عمودی)\n` +
-    `🎯 برنده: ۴ مهره پشت سر هم (افقی، عمودی یا مورب)\n\n` +
+    `📋 صفحه: ۶×۷ (۶ افقی، ۷ عمودی)\n` +
+    `🎯 برنده: ۵ مهره پشت سر هم (افقی، عمودی یا مورب)\n\n` +
     `🎮 ${mentionUser(fromUser.id, fromUser.first_name || 'بازیکن')} (❌) بازی را شروع کرد!\n\n` +
     `برای پیوستن، دکمه زیر را بزنید:`,
     { parse_mode: 'Markdown', ...buildGameKeyboard(session) }
