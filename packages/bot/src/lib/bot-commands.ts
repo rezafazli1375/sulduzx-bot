@@ -16,6 +16,11 @@ export const PRIVATE_COMMANDS = [
 
 export const GROUP_COMMANDS = [
   { command: 'games', description: 'منوی بازی‌های ربات' },
+  { command: 'meen', description: 'شروع بازی مین‌روب' },
+  { command: 'dooz', description: 'شروع بازی دوز' },
+  { command: 'kalame', description: 'شروع بازی کلمه‌یاب' },
+  { command: 'hokm', description: 'شروع بازی حکم' },
+  { command: 'joraat', description: 'شروع جرعت و حقیقت' },
 ];
 
 export async function syncCommandMenus(telegram: any) {

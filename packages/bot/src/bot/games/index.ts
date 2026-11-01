@@ -17,25 +17,25 @@ const GAME_DEFS = [
     key: 'game_tic_tac_toe_enabled',
     action: 'game_tic_tac_toe',
     button: '❌⭕ بازی دوز',
-    desc: '❌⭕ *دوز* — ۲۰×۲۰، پنج تا پشت سر هم بچین!',
+    desc: '❌⭕ *دوز* — صفحه ۶×۷، پنج مهره پشت سر هم بچین! (/dooz)',
   },
   {
     key: 'game_minesweeper_enabled',
     action: 'game_minesweeper',
     button: '💣 پیدا کردن بمب',
-    desc: '💣 *پیدا کردن بمب* — ۲۰×۲۰ با ۵۰ مین، مراقب باش!',
+    desc: '💣 *مین‌روب* — صفحه ۶×۷ با ۸ مین، مراقب باش! (/meen)',
   },
   {
     key: 'game_wordle_enabled',
     action: 'game_wordle',
     button: '🔤 کلمه‌یاب',
-    desc: '🔤 *کلمه‌یاب* — کلمه مخفی را در ۶ تلاش حدس بزن!',
+    desc: '🔤 *کلمه‌یاب* — کلمه مخفی را در ۶ تلاش حدس بزن! (/kalame)',
   },
   {
     key: 'game_hokm_enabled',
     action: 'game_hokm',
     button: '🃏 حکم',
-    desc: '🃏 *حکم* — بازی ورق کلاسیک ایرانی، حکم را با حکم بزن!',
+    desc: '🃏 *حکم* — بازی ورق کلاسیک ایرانی، حکم را با حکم بزن! (/hokm)',
   },
 ];
 
@@ -149,7 +149,8 @@ export async function handleGames(ctx: Context) {
   await ctx.reply(
     '🎮 *به بخش بازی‌ها خوش آمدید!*\n\n' +
     'یکی از بازی‌های زیر را انتخاب کنید:\n\n' +
-    descriptions.join('\n'),
+    descriptions.join('\n') +
+    '\n\n💡 دستورهای سریع: /meen ، /dooz ، /kalame ، /hokm',
     { parse_mode: 'Markdown', ...Markup.inlineKeyboard(rows) }
   );
 }
@@ -160,6 +161,50 @@ export async function handleGameCheckMembership(ctx: Context) {
   if (joined) {
     await handleGames(ctx);
   }
+}
+
+// ─── Direct Game Commands ────────────────────
+// /meen, /dooz, /kalame, /hokm, /joraat start a game immediately.
+export type DirectGameKey = 'truth_or_dare' | 'tic_tac_toe' | 'minesweeper' | 'wordle' | 'hokm';
+
+const DIRECT_GAME_DEFS: Record<DirectGameKey, { settingKey: string; label: string; run: (ctx: Context) => Promise<void> }> = {
+  truth_or_dare: {
+    settingKey: 'game_truth_or_dare_enabled',
+    label: 'جرعت و حقیقت',
+    run: async (ctx) => (await import('./truth-or-dare.js')).handleTruthOrDare(ctx),
+  },
+  tic_tac_toe: {
+    settingKey: 'game_tic_tac_toe_enabled',
+    label: 'دوز',
+    run: async (ctx) => (await import('./tic-tac-toe.js')).handleTicTacToe(ctx),
+  },
+  minesweeper: {
+    settingKey: 'game_minesweeper_enabled',
+    label: 'مین‌روب',
+    run: async (ctx) => (await import('./minesweeper.js')).handleMinesweeper(ctx),
+  },
+  wordle: {
+    settingKey: 'game_wordle_enabled',
+    label: 'کلمه‌یاب',
+    run: async (ctx) => (await import('./wordle.js')).handleWordle(ctx),
+  },
+  hokm: {
+    settingKey: 'game_hokm_enabled',
+    label: 'حکم',
+    run: async (ctx) => (await import('./hokm.js')).handleHokm(ctx),
+  },
+};
+
+export async function handleGameCommand(ctx: Context, game: DirectGameKey) {
+  const def = DIRECT_GAME_DEFS[game];
+  if (!def) return;
+
+  if (!(await isGameEnabled(def.settingKey))) {
+    await ctx.reply(`⛔️ بازی «${def.label}» در حال حاضر غیرفعال است.`);
+    return;
+  }
+
+  await def.run(ctx);
 }
 
 // ─── Game Action Router ──────────────────────

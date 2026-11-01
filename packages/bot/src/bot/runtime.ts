@@ -9,7 +9,7 @@ import { getText } from '../lib/texts.js';
 import { mainMenuKeyboard } from '../lib/ui.js';
 import { handleStart } from './start.js';
 import { handleMenu } from './menu.js';
-import { handleGames } from './games/index.js';
+import { handleGames, handleGameCommand } from './games/index.js';
 import { handleFreeConfig } from './free-config.js';
 import { handleProxy } from './proxy.js';
 import { handleReferral } from './referral.js';
@@ -27,6 +27,26 @@ import {
 import { setupActionHandlers } from './actions.js';
 import { registerFeatureGuard } from '../lib/restrictions.js';
 import { GROUP_COMMANDS } from '../lib/bot-commands.js';
+import type { DirectGameKey } from './games/index.js';
+
+// Commands allowed inside groups: /start, /games + direct game launchers.
+const GROUP_ALLOWED_COMMANDS = new Set([
+  '/start',
+  '/games',
+  '/meen',
+  '/dooz',
+  '/kalame',
+  '/hokm',
+  '/joraat',
+]);
+
+const DIRECT_GAME_COMMANDS: Array<[string, DirectGameKey]> = [
+  ['meen', 'minesweeper'],
+  ['dooz', 'tic_tac_toe'],
+  ['kalame', 'wordle'],
+  ['hokm', 'hokm'],
+  ['joraat', 'truth_or_dare'],
+];
 
 // ─── Channel Membership Check ────────────────
 async function checkChannelMembership(ctx: Context, user: any): Promise<boolean> {
@@ -103,7 +123,7 @@ export function createBotInstance(botId: number, token: string): Telegraf {
     return next();
   });
 
-  // ─── Group Restriction: Only /games allowed ────
+  // ─── Group Restriction: /start, /games + game commands only ────
   bot.use(async (ctx, next) => {
     const chatType = ctx.chat?.type;
     if (chatType === 'group' || chatType === 'supergroup') {
@@ -117,8 +137,9 @@ export function createBotInstance(botId: number, token: string): Telegraf {
       // Check if it's a command
       const text = (ctx.message as any)?.text;
       if (text && text.startsWith('/')) {
-        // Allow /start and /games
-        if (text.startsWith('/start') || text.startsWith('/games')) {
+        // Allow /start, /games and the direct game commands; ignore the rest
+        const command = (text.split(/\s+/)[0] || '').split('@')[0].toLowerCase();
+        if (GROUP_ALLOWED_COMMANDS.has(command)) {
           return next();
         }
         // Ignore all other commands in groups
@@ -232,6 +253,15 @@ export function createBotInstance(botId: number, token: string): Telegraf {
     if (!user) return;
     await handleGames(ctx);
   });
+
+  // Direct game launchers: /meen, /dooz, /kalame, /hokm, /joraat
+  for (const [command, game] of DIRECT_GAME_COMMANDS) {
+    bot.command(command, async (ctx) => {
+      const user = await getUser(ctx);
+      if (!user) return;
+      await handleGameCommand(ctx, game);
+    });
+  }
 
   bot.command('menu', async (ctx) => {
     const user = await getUser(ctx);
