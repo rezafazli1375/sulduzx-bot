@@ -1,7 +1,8 @@
 import { Context } from 'telegraf';
 import { prisma } from '../lib/prisma.js';
-import { getSetting, getSettingBool, getSettingNumber } from '../lib/settings.js';
+import { getSettingBool, getSettingNumber } from '../lib/settings.js';
 import { getText } from '../lib/texts.js';
+import { getDownloaderProxy } from '../lib/ytdlp-proxy.js';
 import { mainMenuKeyboard } from '../lib/ui.js';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -79,7 +80,7 @@ export async function handleDownloader(ctx: Context, user: any, url: string) {
       args.push('-f', 'bestvideo*[height<=720]+bestaudio/best[height<=720]/bestvideo*+bestaudio/best');
     }
 
-    const proxy = await resolveProxy();
+    const proxy = await getDownloaderProxy();
     if (proxy) {
       args.push('--proxy', proxy);
     }
@@ -142,17 +143,6 @@ export async function handleDownloader(ctx: Context, user: any, url: string) {
       await mainMenuKeyboard()
     );
   }
-}
-
-async function resolveProxy(): Promise<string | undefined> {
-  const customEnabled = await getSettingBool('ytdlp_proxy_enabled');
-  const customProxy = ((await getSetting('ytdlp_proxy_url')) || '').trim();
-
-  if (customEnabled && customProxy) {
-    return customProxy;
-  }
-
-  return process.env.YTDLP_PROXY || undefined;
 }
 
 async function friendlyError(error: any): Promise<string> {

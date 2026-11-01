@@ -3,7 +3,7 @@
 # install.sh installs this file as /usr/local/bin/sulduzx.
 set -uo pipefail
 
-SULDUZX_VERSION="1.0.0"
+SULDUZX_VERSION="1.1.0"
 CONFIG_FILE="/etc/sulduzx.conf"
 
 if [ -z "${SULDUZX_DIR:-}" ] && [ -r "$CONFIG_FILE" ]; then

@@ -9,6 +9,7 @@ export const FEATURE_LABELS: { key: string; label: string }[] = [
   { key: 'word_to_pdf', label: 'Word به PDF' },
   { key: 'video_to_mp3', label: 'ویدیو به MP3' },
   { key: 'server_status', label: 'وضعیت سرور' },
+  { key: 'games', label: 'بازی‌ها' },
   { key: 'support', label: 'پشتیبانی' },
 ];
 

@@ -70,6 +70,24 @@ const REQUIRED_DEFAULTS: Array<{
     type: 'NUMBER',
     description: 'حداکثر حجم ویدیو (مگابایت)',
   },
+  {
+    key: 'ytdlp_proxy_mode',
+    value: 'off',
+    type: 'STRING',
+    description: 'حالت پروکسی دانلودر: off, socks, v2ray',
+  },
+  {
+    key: 'ytdlp_v2ray_config',
+    value: '',
+    type: 'STRING',
+    description: 'کانفیگ V2Ray دانلودر (vless://, vmess://, trojan://, ss:// یا JSON)',
+  },
+  {
+    key: 'games_enabled',
+    value: 'true',
+    type: 'BOOLEAN',
+    description: 'بخش بازی‌ها فعال',
+  },
 ];
 
 export async function ensureDefaultSettings(): Promise<void> {
@@ -78,7 +96,19 @@ export async function ensureDefaultSettings(): Promise<void> {
   for (const setting of REQUIRED_DEFAULTS) {
     const existing = await prisma.setting.findUnique({ where: { key: setting.key } });
     if (existing) continue;
-    await prisma.setting.create({ data: setting });
+
+    const data = { ...setting };
+
+    // Carry over the legacy on/off + URL pair so existing installs keep working.
+    if (setting.key === 'ytdlp_proxy_mode') {
+      const legacyEnabled = await prisma.setting.findUnique({ where: { key: 'ytdlp_proxy_enabled' } });
+      const legacyUrl = await prisma.setting.findUnique({ where: { key: 'ytdlp_proxy_url' } });
+      if (legacyEnabled?.value === 'true' && (legacyUrl?.value || '').trim()) {
+        data.value = 'socks';
+      }
+    }
+
+    await prisma.setting.create({ data });
     created = true;
   }
 

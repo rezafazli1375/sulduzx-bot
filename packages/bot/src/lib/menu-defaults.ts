@@ -9,6 +9,7 @@ export const DEFAULT_MENU_BUTTONS = [
   { key: 'word_to_pdf', label: '📄 Word به PDF', color: 'none', sortOrder: 75 },
   { key: 'video_to_mp3', label: '🎬 ویدیو به MP3', color: 'none', sortOrder: 78 },
   { key: 'server_status', label: '📊 وضعیت سرور', color: 'none', sortOrder: 80 },
+  { key: 'games', label: '🎮 بازی‌ها', color: 'none', sortOrder: 85 },
   { key: 'support', label: '🎫 پشتیبانی', color: 'none', sortOrder: 90 },
 ];
 

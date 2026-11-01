@@ -12,6 +12,7 @@ import { getText } from '../lib/texts.js';
 import { mainMenuKeyboard } from '../lib/ui.js';
 import { getBotId } from '../lib/bot-context.js';
 import { findUserByCtx } from '../lib/user.js';
+import { handleGameAction, handleGameCheckMembership } from './games/index.js';
 
 export function setupActionHandlers(bot: Telegraf) {
   bot.action('main_menu', async (ctx) => {
@@ -117,5 +118,50 @@ export function setupActionHandlers(bot: Telegraf) {
 
   bot.action('copy_config', async (ctx) => {
     await ctx.answerCbQuery('لینک کپی شد!');
+  });
+
+  // ─── Game Actions ──────────────────────────
+  bot.action('games', async (ctx) => {
+    await handleGameAction(ctx);
+  });
+
+  bot.action('game_truth_or_dare', async (ctx) => {
+    await handleGameAction(ctx);
+  });
+
+  bot.action('game_tic_tac_toe', async (ctx) => {
+    await handleGameAction(ctx);
+  });
+
+  bot.action('game_minesweeper', async (ctx) => {
+    await handleGameAction(ctx);
+  });
+
+  bot.action('game_haft_khabis', async (ctx) => {
+    await handleGameAction(ctx);
+  });
+
+  bot.action('game_check_membership', async (ctx) => {
+    await handleGameCheckMembership(ctx);
+  });
+
+  // Truth or Dare actions
+  bot.action(/^tod_/, async (ctx) => {
+    await handleGameAction(ctx);
+  });
+
+  // Tic Tac Toe actions
+  bot.action(/^ttt_/, async (ctx) => {
+    await handleGameAction(ctx);
+  });
+
+  // Minesweeper actions
+  bot.action(/^ms_/, async (ctx) => {
+    await handleGameAction(ctx);
+  });
+
+  // Haft Khabis actions
+  bot.action(/^hk_/, async (ctx) => {
+    await handleGameAction(ctx);
   });
 }

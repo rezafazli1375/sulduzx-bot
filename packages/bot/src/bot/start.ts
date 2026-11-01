@@ -85,6 +85,7 @@ export async function sendMainMenu(ctx: Context, user: any, greeting?: string) {
     voiceEnabled,
     wordPdfEnabled,
     videoMp3Enabled,
+    gamesEnabled,
   ] = await Promise.all([
     getSettingBool('free_account_enabled'),
     getSettingBool('referral_enabled'),
@@ -96,6 +97,7 @@ export async function sendMainMenu(ctx: Context, user: any, greeting?: string) {
     getSettingBool('voice_converter_enabled'),
     getSettingBool('word_pdf_enabled'),
     getSettingBool('video_mp3_enabled'),
+    getSettingBool('games_enabled'),
   ]);
 
   const availability: Record<string, boolean> = {
@@ -109,6 +111,7 @@ export async function sendMainMenu(ctx: Context, user: any, greeting?: string) {
     word_to_pdf: wordPdfEnabled,
     video_to_mp3: videoMp3Enabled,
     server_status: serverStatusEnabled,
+    games: gamesEnabled,
     support: supportEnabled,
   };
 

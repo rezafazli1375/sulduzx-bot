@@ -284,3 +284,59 @@ enum AdminRole {
   ADMIN
   MODERATOR
 }
+
+// ──────────────────────────────────────────────
+// Games
+// ──────────────────────────────────────────────
+
+model GameQuestion {
+  id        Int           @id @default(autoincrement())
+  gameType  GameType      @map("game_type")
+  text      String        @db.Text
+  optionA   String?       @map("option_a")
+  optionB   String?       @map("option_b")
+  optionC   String?       @map("option_c")
+  optionD   String?       @map("option_d")
+  answer    String        @default("A")
+  isActive  Boolean       @default(true) @map("is_active")
+  sortOrder Int           @default(0) @map("sort_order")
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @updatedAt @map("updated_at")
+
+  @@map("game_questions")
+}
+
+model GameSession {
+  id          Int          @id @default(autoincrement())
+  chatId      BigInt       @map("chat_id")
+  messageId   BigInt?      @map("message_id")
+  botId       Int          @map("bot_id")
+  gameType    GameType     @map("game_type")
+  status      GameStatus   @default(WAITING)
+  players     Json         @default("[]")
+  currentTurn Int          @default(0) @map("current_turn")
+  board       Json?
+  bombs       Json?
+  revealed    Json?
+  round       Int          @default(1)
+  winnerId    BigInt?      @map("winner_id")
+  data        Json?
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  @@map("game_sessions")
+}
+
+enum GameType {
+  TRUTH_OR_DARE
+  TIC_TAC_TOE
+  MINESWEEPER
+  HAFT_KHABIS
+}
+
+enum GameStatus {
+  WAITING
+  ACTIVE
+  FINISHED
+  CANCELLED
+}

@@ -48,12 +48,15 @@ async function main() {
     { key: 'voice_converter_enabled', value: 'true', type: 'BOOLEAN', description: 'تبدیل ویس و MP3 فعال' },
     { key: 'voice_convert_max_mb', value: '20', type: 'NUMBER', description: 'حداکثر حجم فایل صوتی (مگابایت)' },
     { key: 'voice_convert_max_seconds', value: '600', type: 'NUMBER', description: 'حداکثر مدت فایل صوتی (ثانیه)' },
+    { key: 'games_enabled', value: 'true', type: 'BOOLEAN', description: 'بخش بازی‌ها فعال' },
     { key: 'panel_base_url', value: process.env.PANEL_BASE_URL || '', type: 'STRING', description: 'آدرس پنل x-ui' },
     { key: 'panel_username', value: process.env.PANEL_USERNAME || '', type: 'STRING', description: 'نام کاربری پنل x-ui' },
     { key: 'panel_password', value: process.env.PANEL_PASSWORD || '', type: 'STRING', description: 'رمز عبور پنل x-ui' },
     { key: 'panel_inbound_id', value: process.env.PANEL_INBOUND_ID || '11', type: 'NUMBER', description: 'شناسه اینباند کانفیگ' },
     { key: 'ytdlp_proxy_enabled', value: 'false', type: 'BOOLEAN', description: 'استفاده از پروکسی دستی دانلودر' },
     { key: 'ytdlp_proxy_url', value: '', type: 'STRING', description: 'آدرس پروکسی دستی (مثلاً socks5h://1.2.3.4:1080)' },
+    { key: 'ytdlp_proxy_mode', value: 'off', type: 'STRING', description: 'حالت پروکسی دانلودر: off, socks, v2ray' },
+    { key: 'ytdlp_v2ray_config', value: '', type: 'STRING', description: 'کانفیگ V2Ray دانلودر (vless://, vmess://, trojan://, ss:// یا JSON)' },
   ];
 
   for (const setting of defaultSettings) {
