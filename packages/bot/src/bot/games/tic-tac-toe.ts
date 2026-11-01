@@ -78,6 +78,7 @@ function buildGameKeyboard(session: TttSession): any {
   if (session.status === 'waiting') {
     return Markup.inlineKeyboard([
       [Markup.button.callback('🎮 پیوستن به بازی', 'ttt_join')],
+      [Markup.button.callback('▶️ شروع بازی', 'ttt_start')],
       [Markup.button.callback('❌ لغو', 'ttt_cancel')],
     ]);
   }
@@ -109,6 +110,15 @@ function buildGameKeyboard(session: TttSession): any {
 }
 
 function getStatusText(session: TttSession): string {
+  if (session.status === 'waiting') {
+    if (!session.playerO) {
+      return '⏳ *منتظر بازیکن دوم...*\n' +
+        `👤 ${mentionUser(session.playerX.id, session.playerX.name)} (❌) آماده است؛ نفر دوم دکمه «🎮 پیوستن به بازی» را بزند.`;
+    }
+    return '✅ *بازیکن دوم پیوست!*\n' +
+      `🎮 ${mentionUser(session.playerX.id, session.playerX.name)} دکمه «▶️ شروع بازی» را بزنید.`;
+  }
+
   const winner = checkWinner(session.board);
   const full = isBoardFull(session.board);
 
@@ -158,7 +168,7 @@ export async function handleTicTacToe(ctx: Context) {
     `📋 صفحه: ۶×۷ (۶ افقی، ۷ عمودی)\n` +
     `🎯 برنده: ۵ مهره پشت سر هم (افقی، عمودی یا مورب)\n\n` +
     `🎮 ${mentionUser(fromUser.id, fromUser.first_name || 'بازیکن')} (❌) بازی را شروع کرد!\n\n` +
-    `برای پیوستن، دکمه زیر را بزنید:`,
+    `📌 برای شروع، نفر دوم دکمه «🎮 پیوستن به بازی» را بزند؛ سپس شروع‌کننده «▶️ شروع بازی» را بزند.`,
     { parse_mode: 'Markdown', ...buildGameKeyboard(session) }
   );
 
@@ -195,12 +205,41 @@ export async function handleTicTacToeAction(ctx: Context) {
       await ctx.answerCbQuery('نفر اول باید صبر کند تا نفر دوم بپیوندد!');
       return;
     }
+    if (session.playerO) {
+      await ctx.answerCbQuery(
+        session.playerO.id === userId
+          ? 'شما قبلاً پیوسته‌اید!'
+          : '❌ این بازی دو نفره است — ظرفیت پر شده!'
+      );
+      return;
+    }
 
     session.playerO = { id: userId, name: ctx.from!.first_name || 'بازیکن ۲' };
+
+    await ctx.answerCbQuery('🎮 به بازی پیوستی! شروع‌کننده بازی را استارت کند.');
+    await updateGameMessage(ctx, session);
+    return;
+  }
+
+  // Start game (host only, needs the second player)
+  if (action === 'ttt_start') {
+    if (session.status !== 'waiting') {
+      await ctx.answerCbQuery('بازی قبلاً شروع شده!');
+      return;
+    }
+    if (userId !== session.playerX.id) {
+      await ctx.answerCbQuery('❌ فقط شروع‌کننده بازی می‌تواند بازی را استارت بزند.');
+      return;
+    }
+    if (!session.playerO) {
+      await ctx.answerCbQuery('❌ برای شروع بازی باید بازیکن دوم بپیوندد!');
+      return;
+    }
+
     session.status = 'playing';
     session.currentTurn = 'X';
 
-    await ctx.answerCbQuery('🎮 به بازی پیوستی!');
+    await ctx.answerCbQuery('▶️ بازی شروع شد!');
     await updateGameMessage(ctx, session);
     return;
   }
