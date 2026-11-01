@@ -26,6 +26,7 @@ import {
 } from './file-convert.js';
 import { setupActionHandlers } from './actions.js';
 import { registerFeatureGuard } from '../lib/restrictions.js';
+import { GROUP_COMMANDS } from '../lib/bot-commands.js';
 
 // ─── Channel Membership Check ────────────────
 async function checkChannelMembership(ctx: Context, user: any): Promise<boolean> {
@@ -72,6 +73,27 @@ async function checkChannelMembership(ctx: Context, user: any): Promise<boolean>
 export function createBotInstance(botId: number, token: string): Telegraf {
   const bot = new Telegraf(token);
 
+  // chats where /commands were already registered (per instance)
+  const commandsSyncedChats = new Set<number>();
+
+  async function ensureGroupCommands(ctx: Context) {
+    const chatId = ctx.chat?.id;
+    if (!chatId || commandsSyncedChats.has(chatId)) return;
+    commandsSyncedChats.add(chatId);
+    try {
+      // Per-chat scope forces the client to refresh its "/" menu for this group
+      await ctx.telegram.setMyCommands(GROUP_COMMANDS, {
+        scope: { type: 'chat', chat_id: chatId },
+      });
+      console.log(`Group commands registered for chat ${chatId}`);
+    } catch (error: any) {
+      console.error(
+        `Group commands error (chat ${chatId}):`,
+        error?.description || error?.message || String(error)
+      );
+    }
+  }
+
   bot.use(async (ctx, next) => {
     (ctx as Context & { botId?: number }).botId = botId;
     return next();
@@ -81,6 +103,9 @@ export function createBotInstance(botId: number, token: string): Telegraf {
   bot.use(async (ctx, next) => {
     const chatType = ctx.chat?.type;
     if (chatType === 'group' || chatType === 'supergroup') {
+      // Register this group's command menu once (refreshes client's "/" list)
+      await ensureGroupCommands(ctx);
+
       // Allow callback queries (button clicks) in groups
       if (ctx.callbackQuery) {
         return next();
