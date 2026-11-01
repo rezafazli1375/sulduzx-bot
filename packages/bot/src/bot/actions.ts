@@ -137,6 +137,14 @@ export function setupActionHandlers(bot: Telegraf) {
     await handleGameAction(ctx);
   });
 
+  bot.action('game_wordle', async (ctx) => {
+    await handleGameAction(ctx);
+  });
+
+  bot.action('game_hokm', async (ctx) => {
+    await handleGameAction(ctx);
+  });
+
 
   bot.action('game_check_membership', async (ctx) => {
     await handleGameCheckMembership(ctx);
@@ -154,6 +162,16 @@ export function setupActionHandlers(bot: Telegraf) {
 
   // Minesweeper actions
   bot.action(/^ms_/, async (ctx) => {
+    await handleGameAction(ctx);
+  });
+
+  // Wordle actions
+  bot.action(/^wordle_/, async (ctx) => {
+    await handleGameAction(ctx);
+  });
+
+  // Hokm actions
+  bot.action(/^hokm_/, async (ctx) => {
     await handleGameAction(ctx);
   });
 

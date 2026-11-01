@@ -37,6 +37,19 @@ const persianWords = [
   'گربه', 'سگ', 'پرنده', 'ماهی', 'شیر', 'ببر', 'فیل', 'زرافه',
 ];
 
+// Normalize Persian letters so every character can be typed on the keyboard
+function normalizeWord(word: string): string {
+  return word
+    .replace(/ي/g, 'ی')
+    .replace(/ك/g, 'ک')
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/ؤ/g, 'و')
+    .replace(/ئ/g, 'ی')
+    .replace(/ة/g, 'ه')
+    .replace(/[\u200c\u200f\u200e]/g, '')
+    .trim();
+}
+
 async function getRandomWord(): Promise<string> {
   try {
     // Fetch random active WORDLE question from database
@@ -54,7 +67,7 @@ async function getRandomWord(): Promise<string> {
     }
     
     const randomQuestion = questions[Math.floor(Math.random() * questions.length)];
-    return randomQuestion.text;
+    return normalizeWord(randomQuestion.text);
   } catch (error) {
     console.error('Error fetching Wordle word from DB:', error);
     const words = persianWords.filter(w => w.length === 5);
@@ -64,13 +77,14 @@ async function getRandomWord(): Promise<string> {
 
 // ─── Guess evaluation ────────────────────────
 function evaluateGuess(guess: string, target: string): ('correct' | 'present' | 'absent')[] {
-  const result: ('correct' | 'present' | 'absent')[] = Array(5).fill('absent');
+  const len = target.length;
+  const result: ('correct' | 'present' | 'absent')[] = Array(len).fill('absent');
   const targetChars = target.split('');
   const guessChars = guess.split('');
-  const used = Array(5).fill(false);
+  const used = Array(len).fill(false);
 
   // First pass: correct positions
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < len; i++) {
     if (guessChars[i] === targetChars[i]) {
       result[i] = 'correct';
       used[i] = true;
@@ -78,9 +92,9 @@ function evaluateGuess(guess: string, target: string): ('correct' | 'present' | 
   }
 
   // Second pass: present but wrong position
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < len; i++) {
     if (result[i] === 'correct') continue;
-    for (let j = 0; j < 5; j++) {
+    for (let j = 0; j < len; j++) {
       if (!used[j] && guessChars[i] === targetChars[j]) {
         result[i] = 'present';
         used[j] = true;
@@ -105,7 +119,9 @@ function renderGuess(guess: string, evaluation: ('correct' | 'present' | 'absent
 
 function renderBoard(session: WordleSession): string {
   let board = '';
-  
+  const len = session.targetWord.length;
+  const emptyRow = ('⬜ '.repeat(len)).trim();
+
   for (let i = 0; i < session.guesses.length; i++) {
     const evaluation = evaluateGuess(session.guesses[i], session.targetWord);
     board += renderGuess(session.guesses[i], evaluation) + '\n';
@@ -113,18 +129,18 @@ function renderBoard(session: WordleSession): string {
 
   // Show current guess in progress
   if (session.status === 'playing' && session.currentGuess.length > 0) {
-    const emptySlots = 5 - session.currentGuess.length;
+    const emptySlots = len - session.currentGuess.length;
     board += '🔲 '.repeat(session.currentGuess.length) + session.currentGuess.split('').join('  ') + '\n';
     board += '⬜ '.repeat(emptySlots) + '...';
   } else if (session.status === 'playing') {
-    board += '⬜ ⬜ ⬜ ⬜ ⬜\n';
-    board += '⬜ ⬜ ⬜ ⬜ ⬜\n';
+    board += emptyRow + '\n';
+    board += emptyRow + '\n';
   }
 
   // Fill remaining empty rows
   const remainingRows = session.maxGuesses - session.guesses.length - (session.status === 'playing' ? 1 : 0);
   for (let i = 0; i < remainingRows; i++) {
-    board += '⬜ ⬜ ⬜ ⬜ ⬜\n';
+    board += emptyRow + '\n';
   }
 
   return board.trim();
@@ -228,7 +244,7 @@ export async function handleWordle(ctx: Context) {
     `🔤 *کلمه‌یاب (Wordle فارسی)*\n\n` +
     `🎮 ${mentionUser(fromUser.id, fromUser.first_name || 'بازیکن')} بازی را شروع کرد!\n\n` +
     `📋 *قوانین:*\n` +
-    `• یک کلمه ۵ حرفی انتخاب شده\n` +
+    `• یک کلمه ${targetWord.length} حرفی انتخاب شده\n` +
     `• ۶ تلاش برای حدس زدن داری\n` +
     `• 🟩 = حرف درست در جای درست\n` +
     `• 🟨 = حرف درست در جای اشتباه\n` +
@@ -297,8 +313,8 @@ export async function handleWordleAction(ctx: Context) {
   }
 
   if (action === 'wordle_submit') {
-    if (session.currentGuess.length !== 5) {
-      await ctx.answerCbQuery('❌ کلمه باید ۵ حرف باشد!');
+    if (session.currentGuess.length !== session.targetWord.length) {
+      await ctx.answerCbQuery(`❌ کلمه باید ${session.targetWord.length} حرف باشد!`);
       return;
     }
 
@@ -329,7 +345,7 @@ export async function handleWordleAction(ctx: Context) {
 
   if (action.startsWith('wordle_letter_')) {
     const letter = action.replace('wordle_letter_', '');
-    if (session.currentGuess.length < 5) {
+    if (session.currentGuess.length < session.targetWord.length) {
       session.currentGuess += letter;
       await ctx.answerCbQuery();
       await updateWordleMessage(ctx, session);

@@ -21,15 +21,21 @@ interface GameStats {
   finishedByType: { type: string; count: number }[];
 }
 
-const GAME_TYPES = [
-  { value: 'TRUTH_OR_DARE', label: '🎭 جرعت و حقیقت' },
-  { value: 'TIC_TAC_TOE', label: '❌⭕ دوز' },
-  { value: 'MINESWEEPER', label: '💣 پیدا کردن بمب' },
+const GAME_DEFS = [
+  { value: 'TRUTH_OR_DARE', label: '🎭 جرئت و حقیقت', settingKey: 'game_truth_or_dare_enabled' },
+  { value: 'TIC_TAC_TOE', label: '❌⭕ دوز', settingKey: 'game_tic_tac_toe_enabled' },
+  { value: 'MINESWEEPER', label: '💣 مین‌روب', settingKey: 'game_minesweeper_enabled' },
+  { value: 'WORDLE', label: '🔤 کلمه‌یاب', settingKey: 'game_wordle_enabled' },
+  { value: 'HOKM', label: '🃏 حکم', settingKey: 'game_hokm_enabled' },
 ];
+
+// فقط بازی‌هایی که از سوال استفاده می‌کنند در فرم سوال نمایش داده می‌شوند
+const FORM_GAME_TYPES = GAME_DEFS.filter((g) => ['TRUTH_OR_DARE', 'WORDLE'].includes(g.value));
 
 export default function Games() {
   const [questions, setQuestions] = useState<GameQuestion[]>([]);
   const [stats, setStats] = useState<GameStats | null>(null);
+  const [settings, setSettings] = useState<Record<string, string>>({});
   const [filter, setFilter] = useState<string>('');
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -53,16 +59,35 @@ export default function Games() {
   async function loadData() {
     setLoading(true);
     try {
-      const [qRes, sRes] = await Promise.all([
+      const [qRes, sRes, setRes] = await Promise.all([
         axios.get("/api/games/questions"),
         axios.get("/api/games/stats"),
+        axios.get("/api/settings"),
       ]);
       setQuestions(qRes.data);
       setStats(sRes.data);
+      const settingsMap: Record<string, string> = {};
+      for (const item of (setRes.data || [])) {
+        if (item && item.key) settingsMap[item.key] = item.value;
+      }
+      setSettings(settingsMap);
     } catch (error) {
       console.error('Load data error:', error);
     }
     setLoading(false);
+  }
+
+  async function toggleSetting(key: string, current: boolean) {
+    // optimistic update
+    setSettings((prev) => ({ ...prev, [key]: current ? 'false' : 'true' }));
+    try {
+      await axios.put(`/api/settings/${key}`, { value: current ? 'false' : 'true' });
+    } catch (error) {
+      console.error('Toggle setting error:', error);
+      // revert
+      setSettings((prev) => ({ ...prev, [key]: current ? 'true' : 'false' }));
+      alert('خطا در تغییر وضعیت بازی');
+    }
   }
 
   function resetForm() {
@@ -97,10 +122,18 @@ export default function Games() {
 
   async function saveQuestion() {
     try {
+      const payload = {
+        ...formData,
+        answer: formData.gameType === 'WORDLE' ? formData.text.trim() : formData.answer,
+        optionA: formData.gameType === 'WORDLE' ? '' : formData.optionA,
+        optionB: formData.gameType === 'WORDLE' ? '' : formData.optionB,
+        optionC: formData.gameType === 'WORDLE' ? '' : formData.optionC,
+        optionD: formData.gameType === 'WORDLE' ? '' : formData.optionD,
+      };
       if (editingId) {
-        await axios.put(`/games/questions/${editingId}`, formData);
+        await axios.put(`/api/games/questions/${editingId}`, payload);
       } else {
-        await axios.post('/games/questions', formData);
+        await axios.post('/api/games/questions', payload);
       }
       resetForm();
       await loadData();
@@ -113,7 +146,7 @@ export default function Games() {
   async function deleteQuestion(id: number) {
     if (!confirm('آیا از حذف این سوال مطمئن هستید؟')) return;
     try {
-      await axios.delete(`/games/questions/${id}`);
+      await axios.delete(`/api/games/questions/${id}`);
       await loadData();
     } catch (error) {
       console.error('Delete question error:', error);
@@ -123,7 +156,7 @@ export default function Games() {
 
   async function toggleActive(id: number, isActive: boolean) {
     try {
-      await axios.put(`/games/questions/${id}`, { isActive: !isActive });
+      await axios.put(`/api/games/questions/${id}`, { isActive: !isActive });
       await loadData();
     } catch (error) {
       console.error('Toggle active error:', error);
@@ -136,8 +169,13 @@ export default function Games() {
   });
 
   const gameTypeLabel = (type: string) => {
-    return GAME_TYPES.find((t) => t.value === type)?.label || type;
+    return GAME_DEFS.find((t) => t.value === type)?.label || type;
   };
+
+  const questionCount = (type: string) =>
+    stats?.questionsByType.find((q) => q.type === type)?.count || 0;
+
+  const masterEnabled = settings['games_enabled'] !== 'false';
 
   if (loading) {
     return (
@@ -158,6 +196,69 @@ export default function Games() {
         >
           {showForm ? '❌ بستن فرم' : '➕ سوال جدید'}
         </button>
+      </div>
+
+      {/* Game Toggles */}
+      <div className="bg-white dark:bg-gray-800 rounded-lg p-5 shadow">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+            ⚙️ فعال / غیرفعال کردن بازی‌ها
+          </h2>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-gray-600 dark:text-gray-300">کل بخش بازی‌ها</span>
+            <button
+              onClick={() => toggleSetting('games_enabled', masterEnabled)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                masterEnabled ? 'bg-green-500' : 'bg-gray-400'
+              }`}
+              aria-label="فعال/غیرفعال کردن بخش بازی‌ها"
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  masterEnabled ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {GAME_DEFS.map((game) => {
+            const enabled = settings[game.settingKey] === 'true';
+            return (
+              <div
+                key={game.value}
+                className={`flex items-center justify-between rounded-lg border p-3 transition-colors ${
+                  enabled
+                    ? 'border-green-300 bg-green-50 dark:border-green-700 dark:bg-green-900/20'
+                    : 'border-gray-300 bg-gray-50 dark:border-gray-600 dark:bg-gray-700/30'
+                }`}
+              >
+                <div>
+                  <div className="text-sm font-medium text-gray-900 dark:text-white">
+                    {game.label}
+                  </div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                    {questionCount(game.value)} سوال{!masterEnabled ? ' — کل بخش خاموش' : ''}
+                  </div>
+                </div>
+                <button
+                  onClick={() => toggleSetting(game.settingKey, enabled)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    enabled ? 'bg-green-500' : 'bg-gray-400'
+                  }`}
+                  aria-label={`فعال/غیرفعال کردن ${game.label}`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      enabled ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {/* Stats */}
@@ -203,7 +304,7 @@ export default function Games() {
                 onChange={(e) => setFormData({ ...formData, gameType: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               >
-                {GAME_TYPES.map((type) => (
+                {FORM_GAME_TYPES.map((type) => (
                   <option key={type.value} value={type.value}>
                     {type.label}
                   </option>
@@ -213,18 +314,29 @@ export default function Games() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                متن سوال / چالش
+                {formData.gameType === 'WORDLE' ? 'کلمه مخفی' : 'متن سوال / چالش'}
               </label>
               <textarea
                 value={formData.text}
                 onChange={(e) => setFormData({ ...formData, text: e.target.value })}
                 rows={3}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                placeholder="سوال یا چالش را وارد کنید..."
+                placeholder={
+                  formData.gameType === 'WORDLE'
+                    ? 'کلمه مخفی را وارد کنید... (طول کلمه = تعداد حروفی که کاربر باید حدس بزند)'
+                    : 'سوال یا چالش را وارد کنید...'
+                }
               />
+              {formData.gameType === 'WORDLE' && (
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  کلمه‌ی سخت‌تر = طول بیشتر (۶ تا ۹ حرف پیشنهاد می‌شود). حروف عربی ي/ك به‌صورت خودکار به ی/ک تبدیل می‌شوند.
+                </p>
+              )}
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            {formData.gameType !== 'WORDLE' && (
+              <>
+                <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       گزینه A
@@ -272,21 +384,25 @@ export default function Games() {
                     />
                   </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    جواب صحیح
-                  </label>
-                  <select
-                    value={formData.answer}
-                    onChange={(e) => setFormData({ ...formData, answer: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  >
-                    <option value="A">گزینه A</option>
-                    <option value="B">گزینه B</option>
-                    <option value="C">گزینه C</option>
-                    <option value="D">گزینه D</option>
-                  </select>
-                </div>
+                {formData.gameType !== 'TRUTH_OR_DARE' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      جواب صحیح
+                    </label>
+                    <select
+                      value={formData.answer}
+                      onChange={(e) => setFormData({ ...formData, answer: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    >
+                      <option value="A">گزینه A</option>
+                      <option value="B">گزینه B</option>
+                      <option value="C">گزینه C</option>
+                      <option value="D">گزینه D</option>
+                    </select>
+                  </div>
+                )}
+              </>
+            )}
 
 
             {formData.gameType === 'TRUTH_OR_DARE' && (
@@ -336,7 +452,7 @@ export default function Games() {
       )}
 
       {/* Filter */}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <button
           onClick={() => setFilter('')}
           className={`px-4 py-2 rounded-lg transition-colors ${
@@ -345,9 +461,9 @@ export default function Games() {
               : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
           }`}
         >
-          همه
+          همه ({questions.length})
         </button>
-        {GAME_TYPES.map((type) => (
+        {GAME_DEFS.map((type) => (
           <button
             key={type.value}
             onClick={() => setFilter(type.value)}
@@ -357,7 +473,7 @@ export default function Games() {
                 : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
             }`}
           >
-            {type.label}
+            {type.label} ({questionCount(type.value)})
           </button>
         ))}
       </div>
