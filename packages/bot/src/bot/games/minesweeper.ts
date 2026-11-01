@@ -98,6 +98,7 @@ function buildMsKeyboard(session: MsSession, showAll: boolean = false): any {
   if (session.status === 'waiting') {
     return Markup.inlineKeyboard([
       [Markup.button.callback('🎮 پیوستن به بازی', 'ms_join')],
+      [Markup.button.callback('▶️ شروع بازی', 'ms_start')],
       [Markup.button.callback('❌ لغو', 'ms_cancel')],
     ]);
   }
@@ -190,6 +191,7 @@ export async function handleMinesweeper(ctx: Context) {
     `💣 تعداد بمب: ${BOMB_COUNT}\n` +
     `❤️ جان هر بازیکن: ۳\n\n` +
     `🎯 *قوانین:*\n` +
+    `• بعد از پیوستن بازیکنان، شروع‌کننده دکمه «▶️ شروع بازی» را می‌زند\n` +
     `• هر نوبت یک خانه را باز کنید\n` +
     `• اگر بمب پیدا کنید، یک جان از دست می‌دهید\n` +
     `• اگر همه خانه‌های امن را باز کنید، برنده هستید!\n` +
@@ -235,6 +237,28 @@ export async function handleMinesweeperAction(ctx: Context) {
     return;
   }
 
+  if (action === 'ms_start') {
+    if (session.status !== 'waiting') {
+      await ctx.answerCbQuery('بازی قبلاً شروع شده!');
+      return;
+    }
+    if (session.turnOrder[0] !== userId) {
+      await ctx.answerCbQuery('❌ فقط شروع‌کننده بازی می‌تواند بازی را استارت بزند.');
+      return;
+    }
+    if (session.players.size < 1) {
+      await ctx.answerCbQuery('❌ حداقل ۱ بازیکن نیاز است!');
+      return;
+    }
+
+    session.status = 'playing';
+    session.currentTurnIndex = 0;
+
+    await ctx.answerCbQuery('🎮 بازی شروع شد!');
+    await updateMsMessage(ctx, session);
+    return;
+  }
+
   if (action === 'ms_join') {
     if (session.status !== 'waiting') {
       await ctx.answerCbQuery('بازی قبلاً شروع شده!');
@@ -268,12 +292,8 @@ export async function handleMinesweeperAction(ctx: Context) {
 
   if (action.startsWith('ms_pick_')) {
     if (session.status === 'waiting') {
-      // Start the game if enough players
-      if (session.players.size < 1) {
-        await ctx.answerCbQuery('❌ حداقل ۱ بازیکن نیاز است!');
-        return;
-      }
-      session.status = 'playing';
+      await ctx.answerCbQuery('⏳ بازی هنوز شروع نشده! شروع‌کننده باید دکمه «▶️ شروع بازی» را بزند.');
+      return;
     }
 
     if (session.status !== 'playing') {
@@ -384,7 +404,7 @@ async function updateMsMessage(ctx: Context, session: MsSession, showBombs: bool
 
   let statusText: string;
   if (session.status === 'waiting') {
-    statusText = `👥 *بازیکنان:* ${session.players.size}\nبرای شروع، دکمه پیوستن را بزنید.`;
+    statusText = `👥 *بازیکنان:* ${session.players.size}\nبرای پیوستن دکمه «🎮 پیوستن به بازی» را بزنید.\nشروع‌کننده پس از پیوستن بازیکنان، «▶️ شروع بازی» را بزند.`;
   } else if (session.status === 'finished') {
     statusText = session.winner
       ? `🏆 *برنده:* ${mentionUser(session.winner.id, session.winner.name)}\n🎉 ۳۰ امتیاز دریافت شد!`
