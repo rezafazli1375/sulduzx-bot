@@ -9,6 +9,7 @@ import { getText } from '../lib/texts.js';
 import { mainMenuKeyboard } from '../lib/ui.js';
 import { handleStart } from './start.js';
 import { handleMenu } from './menu.js';
+import { handleGames } from './games/index.js';
 import { handleFreeConfig } from './free-config.js';
 import { handleProxy } from './proxy.js';
 import { handleReferral } from './referral.js';
@@ -80,6 +81,10 @@ export function createBotInstance(botId: number, token: string): Telegraf {
   bot.use(async (ctx, next) => {
     const chatType = ctx.chat?.type;
     if (chatType === 'group' || chatType === 'supergroup') {
+      // Allow callback queries (button clicks) in groups
+      if (ctx.callbackQuery) {
+        return next();
+      }
       // Check if it's a command
       const text = (ctx.message as any)?.text;
       if (text && text.startsWith('/')) {
@@ -191,6 +196,12 @@ export function createBotInstance(botId: number, token: string): Telegraf {
     }
 
     await handleStart(ctx, user);
+  });
+
+  bot.command('games', async (ctx) => {
+    const user = await getUser(ctx);
+    if (!user) return;
+    await handleGames(ctx);
   });
 
   bot.command('menu', async (ctx) => {
