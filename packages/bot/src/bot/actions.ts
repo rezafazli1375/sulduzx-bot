@@ -1,4 +1,5 @@
 import { Telegraf } from 'telegraf';
+import { prisma } from '../lib/prisma.js';
 import { sendMainMenu } from './start.js';
 import { confirmFreeConfig } from './free-config.js';
 import { handleProxy } from './proxy.js';
@@ -148,6 +149,37 @@ export function setupActionHandlers(bot: Telegraf) {
 
   bot.action('game_check_membership', async (ctx) => {
     await handleGameCheckMembership(ctx);
+  });
+
+  // General channel membership check
+  bot.action('check_membership', async (ctx) => {
+    await ctx.answerCbQuery('در حال بررسی...');
+    const user = await findUserByCtx(ctx);
+    if (!user) return;
+    const channels = await prisma.channel.findMany({
+      where: { botId: getBotId(ctx), isRequired: true, isActive: true },
+      orderBy: { joinOrder: 'asc' },
+    });
+    if (channels.length === 0) {
+      await ctx.reply('✅ عضویت شما تأیید شد. حالا می‌توانید از ربات استفاده کنید.');
+      return;
+    }
+    const notJoined: { username: string; title: string }[] = [];
+    for (const channel of channels) {
+      try {
+        const member = await ctx.telegram.getChatMember(channel.channelId.toString(), ctx.from!.id);
+        if (!['creator', 'administrator', 'member'].includes(member.status)) {
+          notJoined.push({ username: channel.channelUsername, title: channel.title || channel.channelUsername });
+        }
+      } catch {
+        notJoined.push({ username: channel.channelUsername, title: channel.title || channel.channelUsername });
+      }
+    }
+    if (notJoined.length === 0) {
+      await ctx.reply('✅ عضویت شما تأیید شد. حالا می‌توانید از ربات استفاده کنید.');
+    } else {
+      await ctx.reply('❌ هنوز عضو همه کانال‌ها نشده‌اید.');
+    }
   });
 
   // Truth or Dare actions

@@ -1,4 +1,4 @@
-import { Telegraf, Context } from 'telegraf';
+import { Telegraf, Context, Markup } from 'telegraf';
 import { message } from 'telegraf/filters';
 import { prisma } from '../lib/prisma.js';
 import { getSetting, getSettingBool } from '../lib/settings.js';
@@ -26,11 +26,89 @@ import {
 import { setupActionHandlers } from './actions.js';
 import { registerFeatureGuard } from '../lib/restrictions.js';
 
+// ─── Channel Membership Check ────────────────
+async function checkChannelMembership(ctx: Context, user: any): Promise<boolean> {
+  const channels = await prisma.channel.findMany({
+    where: { botId: user.botId, isRequired: true, isActive: true },
+    orderBy: { joinOrder: 'asc' },
+  });
+
+  if (channels.length === 0) return true;
+
+  const notJoined: { username: string; title: string }[] = [];
+
+  for (const channel of channels) {
+    try {
+      const member = await ctx.telegram.getChatMember(channel.channelId.toString(), ctx.from!.id);
+      if (!['creator', 'administrator', 'member'].includes(member.status)) {
+        notJoined.push({ username: channel.channelUsername, title: channel.title || channel.channelUsername });
+      }
+    } catch {
+      notJoined.push({ username: channel.channelUsername, title: channel.title || channel.channelUsername });
+    }
+  }
+
+  if (notJoined.length > 0) {
+    const channelLinks = notJoined.map((ch) => `📢 ${ch.title}`).join('\n');
+    const buttons: any[] = notJoined.map((ch) => [
+      Markup.button.url(
+        `📢 عضویت در ${ch.title}`,
+        `https://t.me/${ch.username.replace(/^@/, '')}`
+      ),
+    ]);
+    buttons.push([Markup.button.callback('✅ بررسی مجدد', 'check_membership')]);
+
+    await ctx.reply(
+      `⚠️ برای استفاده از ربات، ابتدا عضو کانال‌های زیر شوید:\n\n${channelLinks}`,
+      Markup.inlineKeyboard(buttons)
+    );
+    return false;
+  }
+
+  return true;
+}
+
 export function createBotInstance(botId: number, token: string): Telegraf {
   const bot = new Telegraf(token);
 
   bot.use(async (ctx, next) => {
     (ctx as Context & { botId?: number }).botId = botId;
+    return next();
+  });
+
+  // ─── Group Restriction: Only /games allowed ────
+  bot.use(async (ctx, next) => {
+    const chatType = ctx.chat?.type;
+    if (chatType === 'group' || chatType === 'supergroup') {
+      // Check if it's a command
+      const text = (ctx.message as any)?.text;
+      if (text && text.startsWith('/')) {
+        // Allow /start and /games
+        if (text.startsWith('/start') || text.startsWith('/games')) {
+          return next();
+        }
+        // Ignore all other commands in groups
+        return;
+      }
+      // Ignore non-command messages in groups
+      return;
+    }
+    return next();
+  });
+
+  // ─── Channel Membership Check (Private Only) ────
+  bot.use(async (ctx, next) => {
+    const chatType = ctx.chat?.type;
+    if (chatType === 'private') {
+      const forceJoin = await getSettingBool('force_join_channels');
+      if (forceJoin) {
+        const user = await findUserByCtx(ctx);
+        if (user) {
+          const joined = await checkChannelMembership(ctx, user);
+          if (!joined) return;
+        }
+      }
+    }
     return next();
   });
 
