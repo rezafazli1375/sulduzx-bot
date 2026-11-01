@@ -20,9 +20,10 @@ export const GROUP_COMMANDS = [
 
 export async function syncCommandMenus(telegram: any) {
   try {
-    // Default scope (fallback)
-    await telegram.setMyCommands(PRIVATE_COMMANDS);
-    // Private chats
+    // Default scope = groups list: if a client falls back to it inside a group,
+    // it still only sees /games (private chats are covered by all_private_chats).
+    await telegram.setMyCommands(GROUP_COMMANDS);
+    // Private chats — full command list
     await telegram.setMyCommands(PRIVATE_COMMANDS, { scope: { type: 'all_private_chats' } });
     // Groups — only /games
     await telegram.setMyCommands(GROUP_COMMANDS, { scope: { type: 'all_group_chats' } });

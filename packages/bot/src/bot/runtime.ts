@@ -85,6 +85,10 @@ export function createBotInstance(botId: number, token: string): Telegraf {
       await ctx.telegram.setMyCommands(GROUP_COMMANDS, {
         scope: { type: 'chat', chat_id: chatId },
       });
+      // Also register for group admins of this chat (higher priority scope)
+      await ctx.telegram.setMyCommands(GROUP_COMMANDS, {
+        scope: { type: 'chat_administrators', chat_id: chatId },
+      });
       console.log(`Group commands registered for chat ${chatId}`);
     } catch (error: any) {
       console.error(
