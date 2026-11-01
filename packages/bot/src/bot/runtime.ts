@@ -101,14 +101,19 @@ export function createBotInstance(botId: number, token: string): Telegraf {
     if (!chatId || commandsSyncedChats.has(chatId)) return;
     commandsSyncedChats.add(chatId);
     try {
-      // Per-chat scope forces the client to refresh its "/" menu for this group
-      await ctx.telegram.setMyCommands(GROUP_COMMANDS, {
-        scope: { type: 'chat', chat_id: chatId },
-      });
-      // Also register for group admins of this chat (higher priority scope)
-      await ctx.telegram.setMyCommands(GROUP_COMMANDS, {
-        scope: { type: 'chat_administrators', chat_id: chatId },
-      });
+      // Per-chat scope forces the client to refresh its "/" menu for this group.
+      // Register for the default list and fa/en so every client language sees it.
+      for (const language of ['', 'fa', 'en']) {
+        const langExtra = language ? { language_code: language } : {};
+        await ctx.telegram.setMyCommands(GROUP_COMMANDS, {
+          scope: { type: 'chat', chat_id: chatId },
+          ...langExtra,
+        });
+        await ctx.telegram.setMyCommands(GROUP_COMMANDS, {
+          scope: { type: 'chat_administrators', chat_id: chatId },
+          ...langExtra,
+        });
+      }
       console.log(`Group commands registered for chat ${chatId}`);
     } catch (error: any) {
       console.error(
