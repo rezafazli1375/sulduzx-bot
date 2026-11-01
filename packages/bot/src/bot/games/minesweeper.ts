@@ -14,7 +14,8 @@ interface MsSession {
   chatId: number;
   messageId: number;
   board: MsCell[][];
-  size: number;
+  rows: number;
+  cols: number;
   bombCount: number;
   players: Map<number, { id: number; name: string; lives: number }>;
   turnOrder: number[];
@@ -27,13 +28,18 @@ interface MsSession {
 
 const sessions = new Map<string, MsSession>();
 
+// صفحه: ۴ ستون افقی × ۵ ردیف عمودی
+const ROWS = 5;
+const COLS = 4;
+const BOMB_COUNT = 4;
+
 function sessionKey(chatId: number): string {
   return `ms:${chatId}`;
 }
 
-function createBoard(size: number, bombCount: number): MsCell[][] {
-  const board: MsCell[][] = Array.from({ length: size }, () =>
-    Array.from({ length: size }, () => ({
+function createBoard(rows: number, cols: number, bombCount: number): MsCell[][] {
+  const board: MsCell[][] = Array.from({ length: rows }, () =>
+    Array.from({ length: cols }, () => ({
       isBomb: false,
       revealed: false,
       adjacentBombs: 0,
@@ -43,8 +49,8 @@ function createBoard(size: number, bombCount: number): MsCell[][] {
   // Place bombs randomly
   let placed = 0;
   while (placed < bombCount) {
-    const r = Math.floor(Math.random() * size);
-    const c = Math.floor(Math.random() * size);
+    const r = Math.floor(Math.random() * rows);
+    const c = Math.floor(Math.random() * cols);
     if (!board[r][c].isBomb) {
       board[r][c].isBomb = true;
       placed++;
@@ -52,15 +58,15 @@ function createBoard(size: number, bombCount: number): MsCell[][] {
   }
 
   // Calculate adjacent bombs
-  for (let r = 0; r < size; r++) {
-    for (let c = 0; c < size; c++) {
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
       if (board[r][c].isBomb) continue;
       let count = 0;
       for (let dr = -1; dr <= 1; dr++) {
         for (let dc = -1; dc <= 1; dc++) {
           const nr = r + dr;
           const nc = c + dc;
-          if (nr >= 0 && nr < size && nc >= 0 && nc < size && board[nr][nc].isBomb) {
+          if (nr >= 0 && nr < rows && nc >= 0 && nc < cols && board[nr][nc].isBomb) {
             count++;
           }
         }
@@ -104,9 +110,9 @@ function buildMsKeyboard(session: MsSession, showAll: boolean = false): any {
   }
 
   const buttons = [];
-  for (let r = 0; r < session.size; r++) {
+  for (let r = 0; r < session.rows; r++) {
     const row = [];
-    for (let c = 0; c < session.size; c++) {
+    for (let c = 0; c < session.cols; c++) {
       const cell = session.board[r][c];
       let label: string;
       if (showAll && cell.isBomb) {
@@ -156,9 +162,10 @@ export async function handleMinesweeper(ctx: Context) {
   const session: MsSession = {
     chatId,
     messageId: 0,
-    board: createBoard(20, 50),
-    size: 20,
-    bombCount: 50,
+    board: createBoard(ROWS, COLS, BOMB_COUNT),
+    rows: ROWS,
+    cols: COLS,
+    bombCount: BOMB_COUNT,
     players: new Map(),
     turnOrder: [],
     currentTurnIndex: 0,
@@ -179,8 +186,8 @@ export async function handleMinesweeper(ctx: Context) {
   const msg = await ctx.reply(
     `💣 *بازی مین‌روب*\n\n` +
     `🎮 ${mentionUser(fromUser.id, fromUser.first_name || 'بازیکن')} بازی را شروع کرد!\n\n` +
-    `📏 اندازه صفحه: ۵×۵\n` +
-    `💣 تعداد بمب: ۵\n` +
+    `📏 اندازه صفحه: ۴×۵ (۴ افقی، ۵ عمودی)\n` +
+    `💣 تعداد بمب: ${BOMB_COUNT}\n` +
     `❤️ جان هر بازیکن: ۳\n\n` +
     `🎯 *قوانین:*\n` +
     `• هر نوبت یک خانه را باز کنید\n` +
@@ -285,7 +292,7 @@ export async function handleMinesweeperAction(ctx: Context) {
     const row = parseInt(rowStr);
     const col = parseInt(colStr);
 
-    if (row < 0 || row >= session.size || col < 0 || col >= session.size) {
+    if (row < 0 || row >= session.rows || col < 0 || col >= session.cols) {
       await ctx.answerCbQuery('❌ خانه نامعتبر!');
       return;
     }
@@ -326,7 +333,7 @@ export async function handleMinesweeperAction(ctx: Context) {
       await ctx.answerCbQuery(`💥 بمب! ${player.lives} جان باقی‌مانده.`);
     } else {
       // Safe cell
-      const safeCells = session.size * session.size - session.bombCount;
+      const safeCells = session.rows * session.cols - session.bombCount;
       if (session.revealedCount >= safeCells) {
         // All safe cells revealed!
         session.status = 'finished';

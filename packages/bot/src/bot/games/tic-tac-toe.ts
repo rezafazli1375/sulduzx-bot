@@ -20,12 +20,17 @@ interface TttSession {
 
 const sessions = new Map<string, TttSession>();
 
+// صفحه: ۴ ستون افقی × ۵ ردیف عمودی — برنده: ۴ مهره پشت سر هم
+const ROWS = 5;
+const COLS = 4;
+const WIN_LENGTH = 4;
+
 function sessionKey(chatId: number): string {
   return `ttt:${chatId}`;
 }
 
 function createEmptyBoard(): Board {
-  return Array.from({ length: 20 }, () => Array.from({ length: 20 }, () => null));
+  return Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => null));
 }
 
 function renderBoard(board: Board): string {
@@ -36,45 +41,28 @@ function renderBoard(board: Board): string {
 }
 
 function checkWinner(board: Board): Cell {
-  const size = 20;
-  const winLength = 5;
+  const directions: [number, number][] = [
+    [0, 1],   // افقی
+    [1, 0],   // عمودی
+    [1, 1],   // مورب
+    [1, -1],  // مورب معکوس
+  ];
 
-  // Check rows
-  for (let r = 0; r < size; r++) {
-    for (let c = 0; c <= size - winLength; c++) {
-      if (board[r][c] && board[r][c] === board[r][c+1] && board[r][c] === board[r][c+2] && 
-          board[r][c] === board[r][c+3] && board[r][c] === board[r][c+4]) {
-        return board[r][c];
-      }
-    }
-  }
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const cell = board[r][c];
+      if (!cell) continue;
 
-  // Check columns
-  for (let c = 0; c < size; c++) {
-    for (let r = 0; r <= size - winLength; r++) {
-      if (board[r][c] && board[r][c] === board[r+1][c] && board[r][c] === board[r+2][c] && 
-          board[r][c] === board[r+3][c] && board[r][c] === board[r+4][c]) {
-        return board[r][c];
-      }
-    }
-  }
-
-  // Check diagonals (top-left to bottom-right)
-  for (let r = 0; r <= size - winLength; r++) {
-    for (let c = 0; c <= size - winLength; c++) {
-      if (board[r][c] && board[r][c] === board[r+1][c+1] && board[r][c] === board[r+2][c+2] && 
-          board[r][c] === board[r+3][c+3] && board[r][c] === board[r+4][c+4]) {
-        return board[r][c];
-      }
-    }
-  }
-
-  // Check diagonals (top-right to bottom-left)
-  for (let r = 0; r <= size - winLength; r++) {
-    for (let c = winLength - 1; c < size; c++) {
-      if (board[r][c] && board[r][c] === board[r+1][c-1] && board[r][c] === board[r+2][c-2] && 
-          board[r][c] === board[r+3][c-3] && board[r][c] === board[r+4][c-4]) {
-        return board[r][c];
+      for (const [dr, dc] of directions) {
+        let count = 0;
+        for (let k = 0; k < WIN_LENGTH; k++) {
+          const nr = r + dr * k;
+          const nc = c + dc * k;
+          if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS) break;
+          if (board[nr][nc] !== cell) break;
+          count++;
+        }
+        if (count === WIN_LENGTH) return cell;
       }
     }
   }
@@ -95,9 +83,9 @@ function buildGameKeyboard(session: TttSession): any {
   }
 
   const buttons = [];
-  for (let r = 0; r < 20; r++) {
+  for (let r = 0; r < ROWS; r++) {
     const row = [];
-    for (let c = 0; c < 20; c++) {
+    for (let c = 0; c < COLS; c++) {
       const cell = session.board[r][c];
       const label = cell === 'X' ? '❌' : cell === 'O' ? '⭕' : '⬜';
       const disabled = cell !== null || session.status === 'finished';
@@ -167,6 +155,8 @@ export async function handleTicTacToe(ctx: Context) {
 
   const msg = await ctx.reply(
     `❌⭕ *بازی دوز*\n\n` +
+    `📋 صفحه: ۴×۵ (۴ افقی، ۵ عمودی)\n` +
+    `🎯 برنده: ۴ مهره پشت سر هم (افقی، عمودی یا مورب)\n\n` +
     `🎮 ${mentionUser(fromUser.id, fromUser.first_name || 'بازیکن')} (❌) بازی را شروع کرد!\n\n` +
     `برای پیوستن، دکمه زیر را بزنید:`,
     { parse_mode: 'Markdown', ...buildGameKeyboard(session) }
