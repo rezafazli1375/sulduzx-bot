@@ -25,11 +25,7 @@ function sessionKey(chatId: number): string {
 }
 
 function createEmptyBoard(): Board {
-  return [
-    [null, null, null],
-    [null, null, null],
-    [null, null, null],
-  ];
+  return Array.from({ length: 20 }, () => Array.from({ length: 20 }, () => null));
 }
 
 function renderBoard(board: Board): string {
@@ -40,25 +36,49 @@ function renderBoard(board: Board): string {
 }
 
 function checkWinner(board: Board): Cell {
-  // Rows
-  for (let r = 0; r < 3; r++) {
-    if (board[r][0] && board[r][0] === board[r][1] && board[r][1] === board[r][2]) {
-      return board[r][0];
+  const size = 20;
+  const winLength = 5;
+
+  // Check rows
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c <= size - winLength; c++) {
+      if (board[r][c] && board[r][c] === board[r][c+1] && board[r][c] === board[r][c+2] && 
+          board[r][c] === board[r][c+3] && board[r][c] === board[r][c+4]) {
+        return board[r][c];
+      }
     }
   }
-  // Columns
-  for (let c = 0; c < 3; c++) {
-    if (board[0][c] && board[0][c] === board[1][c] && board[1][c] === board[2][c]) {
-      return board[0][c];
+
+  // Check columns
+  for (let c = 0; c < size; c++) {
+    for (let r = 0; r <= size - winLength; r++) {
+      if (board[r][c] && board[r][c] === board[r+1][c] && board[r][c] === board[r+2][c] && 
+          board[r][c] === board[r+3][c] && board[r][c] === board[r+4][c]) {
+        return board[r][c];
+      }
     }
   }
-  // Diagonals
-  if (board[0][0] && board[0][0] === board[1][1] && board[1][1] === board[2][2]) {
-    return board[0][0];
+
+  // Check diagonals (top-left to bottom-right)
+  for (let r = 0; r <= size - winLength; r++) {
+    for (let c = 0; c <= size - winLength; c++) {
+      if (board[r][c] && board[r][c] === board[r+1][c+1] && board[r][c] === board[r+2][c+2] && 
+          board[r][c] === board[r+3][c+3] && board[r][c] === board[r+4][c+4]) {
+        return board[r][c];
+      }
+    }
   }
-  if (board[0][2] && board[0][2] === board[1][1] && board[1][1] === board[2][0]) {
-    return board[0][2];
+
+  // Check diagonals (top-right to bottom-left)
+  for (let r = 0; r <= size - winLength; r++) {
+    for (let c = winLength - 1; c < size; c++) {
+      if (board[r][c] && board[r][c] === board[r+1][c-1] && board[r][c] === board[r+2][c-2] && 
+          board[r][c] === board[r+3][c-3] && board[r][c] === board[r+4][c-4]) {
+        return board[r][c];
+      }
+    }
   }
+
   return null;
 }
 
@@ -75,9 +95,9 @@ function buildGameKeyboard(session: TttSession): any {
   }
 
   const buttons = [];
-  for (let r = 0; r < 3; r++) {
+  for (let r = 0; r < 20; r++) {
     const row = [];
-    for (let c = 0; c < 3; c++) {
+    for (let c = 0; c < 20; c++) {
       const cell = session.board[r][c];
       const label = cell === 'X' ? '❌' : cell === 'O' ? '⭕' : '⬜';
       const disabled = cell !== null || session.status === 'finished';

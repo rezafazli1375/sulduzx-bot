@@ -331,7 +331,8 @@ enum GameType {
   TRUTH_OR_DARE
   TIC_TAC_TOE
   MINESWEEPER
-  HAFT_KHABIS
+  WORDLE
+  HOKM
 }
 
 enum GameStatus {

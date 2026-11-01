@@ -15,6 +15,15 @@ export async function handleStart(ctx: Context, user: any) {
     if (!joined) return;
   }
 
+  // Check if this is a group chat
+  const chatType = ctx.chat?.type;
+  if (chatType === 'group' || chatType === 'supergroup') {
+    // In groups, only show games menu
+    const { handleGames } = await import('./games/index.js');
+    await handleGames(ctx);
+    return;
+  }
+
   const welcomeMessage = await getSetting('welcome_message');
   await sendMainMenu(ctx, user, welcomeMessage || undefined);
 }

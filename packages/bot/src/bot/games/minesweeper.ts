@@ -140,7 +140,7 @@ function getCurrentPlayer(session: MsSession): { id: number; name: string; lives
 
 // ─── Start Minesweeper ───────────────────────
 export async function handleMinesweeper(ctx: Context) {
-  if (!(await requireGroup(ctx, 'پیدا کردن بمب'))) return;
+  if (!(await requireGroup(ctx, 'مین‌روب'))) return;
   if (!(await checkGameChannelJoin(ctx))) return;
 
   const chatId = ctx.chat!.id;
@@ -156,9 +156,9 @@ export async function handleMinesweeper(ctx: Context) {
   const session: MsSession = {
     chatId,
     messageId: 0,
-    board: createBoard(5, 5),
-    size: 5,
-    bombCount: 5,
+    board: createBoard(20, 50),
+    size: 20,
+    bombCount: 50,
     players: new Map(),
     turnOrder: [],
     currentTurnIndex: 0,
@@ -177,7 +177,7 @@ export async function handleMinesweeper(ctx: Context) {
   sessions.set(key, session);
 
   const msg = await ctx.reply(
-    `💣 *بازی پیدا کردن بمب*\n\n` +
+    `💣 *بازی مین‌روب*\n\n` +
     `🎮 ${mentionUser(fromUser.id, fromUser.first_name || 'بازیکن')} بازی را شروع کرد!\n\n` +
     `📏 اندازه صفحه: ۵×۵\n` +
     `💣 تعداد بمب: ۵\n` +
@@ -394,7 +394,7 @@ async function updateMsMessage(ctx: Context, session: MsSession, showBombs: bool
     .join('\n');
 
   const text =
-    `💣 *بازی پیدا کردن بمب*\n\n` +
+    `💣 *بازی مین‌روب*\n\n` +
     `${boardStr}\n\n` +
     `👥 *بازیکنان:*\n${playersList || '...'}\n\n` +
     `${statusText}`;

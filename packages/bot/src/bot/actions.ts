@@ -137,9 +137,6 @@ export function setupActionHandlers(bot: Telegraf) {
     await handleGameAction(ctx);
   });
 
-  bot.action('game_haft_khabis', async (ctx) => {
-    await handleGameAction(ctx);
-  });
 
   bot.action('game_check_membership', async (ctx) => {
     await handleGameCheckMembership(ctx);
@@ -160,8 +157,4 @@ export function setupActionHandlers(bot: Telegraf) {
     await handleGameAction(ctx);
   });
 
-  // Haft Khabis actions
-  bot.action(/^hk_/, async (ctx) => {
-    await handleGameAction(ctx);
-  });
 }

@@ -25,7 +25,6 @@ const GAME_TYPES = [
   { value: 'TRUTH_OR_DARE', label: '🎭 جرعت و حقیقت' },
   { value: 'TIC_TAC_TOE', label: '❌⭕ دوز' },
   { value: 'MINESWEEPER', label: '💣 پیدا کردن بمب' },
-  { value: 'HAFT_KHABIS', label: '😈 هفت خبیث' },
 ];
 
 export default function Games() {
@@ -37,7 +36,7 @@ export default function Games() {
   const [loading, setLoading] = useState(true);
 
   const [formData, setFormData] = useState({
-    gameType: 'HAFT_KHABIS',
+    gameType: 'TRUTH_OR_DARE',
     text: '',
     optionA: '',
     optionB: '',
@@ -55,8 +54,8 @@ export default function Games() {
     setLoading(true);
     try {
       const [qRes, sRes] = await Promise.all([
-        axios.get("/games/questions"),
-        axios.get("/games/stats"),
+        axios.get("/api/games/questions"),
+        axios.get("/api/games/stats"),
       ]);
       setQuestions(qRes.data);
       setStats(sRes.data);
@@ -68,8 +67,8 @@ export default function Games() {
 
   function resetForm() {
     setFormData({
-      gameType: 'HAFT_KHABIS',
-      text: '',
+      gameType: 'TRUTH_OR_DARE',
+        text: '',
       optionA: '',
       optionB: '',
       optionC: '',
@@ -225,9 +224,7 @@ export default function Games() {
               />
             </div>
 
-            {formData.gameType === 'HAFT_KHABIS' && (
-              <>
-                <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       گزینه A
@@ -290,8 +287,7 @@ export default function Games() {
                     <option value="D">گزینه D</option>
                   </select>
                 </div>
-              </>
-            )}
+
 
             {formData.gameType === 'TRUTH_OR_DARE' && (
               <div>

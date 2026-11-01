@@ -88,6 +88,36 @@ const REQUIRED_DEFAULTS: Array<{
     type: 'BOOLEAN',
     description: 'بخش بازی‌ها فعال',
   },
+  {
+    key: "game_hokm_enabled",
+    value: "true",
+    type: "BOOLEAN",
+    description: "بازی حکم فعال",
+  },
+  {
+    key: "game_truth_or_dare_enabled",
+    value: "true",
+    type: "BOOLEAN",
+    description: "بازی جرعت و حقیقت فعال",
+  },
+  {
+    key: "game_tic_tac_toe_enabled",
+    value: "true",
+    type: "BOOLEAN",
+    description: "بازی دوز فعال",
+  },
+  {
+    key: "game_minesweeper_enabled",
+    value: "true",
+    type: "BOOLEAN",
+    description: "بازی مین‌روب فعال",
+  },
+  {
+    key: "game_wordle_enabled",
+    value: "true",
+    type: "BOOLEAN",
+    description: "بازی کلمه‌یاب فعال",
+  },
 ];
 
 export async function ensureDefaultSettings(): Promise<void> {

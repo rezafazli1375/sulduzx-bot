@@ -99,7 +99,6 @@ export async function handleGames(ctx: Context) {
     [Markup.button.callback('🎭 جرعت و حقیقت', 'game_truth_or_dare')],
     [Markup.button.callback('❌⭕ بازی دوز', 'game_tic_tac_toe')],
     [Markup.button.callback('💣 پیدا کردن بمب', 'game_minesweeper')],
-    [Markup.button.callback('😈 هفت خبیث', 'game_haft_khabis')],
     [Markup.button.callback('🔙 بازگشت', 'main_menu')],
   ]);
 
@@ -109,7 +108,6 @@ export async function handleGames(ctx: Context) {
     '🎭 *جرعت و حقیقت* — حقیقت بگو یا جرئت انجام بده!\n' +
     '❌⭕ *دوز* — بازی کلاسیک دو نفره\n' +
     '💣 *پیدا کردن بمب* — مراقب مین‌ها باش!\n' +
-    '😈 *هفت خبیث* — ۷ سوال، ۷ مرحله، فقط باهوش‌ها!',
     { parse_mode: 'Markdown', ...keyboard }
   );
 }
@@ -130,7 +128,6 @@ export async function handleGameAction(ctx: Context) {
   const { handleTruthOrDare, handleTruthOrDareAction } = await import('./truth-or-dare.js');
   const { handleTicTacToe, handleTicTacToeAction } = await import('./tic-tac-toe.js');
   const { handleMinesweeper, handleMinesweeperAction } = await import('./minesweeper.js');
-  const { handleHaftKhabis, handleHaftKhabisAction } = await import('./haft-khabis.js');
 
   switch (action) {
     case 'games':
@@ -156,12 +153,6 @@ export async function handleGameAction(ctx: Context) {
       await handleMinesweeper(ctx);
       break;
 
-    // Haft Khabis
-    case 'game_haft_khabis':
-      await ctx.answerCbQuery();
-      await handleHaftKhabis(ctx);
-      break;
-
     default:
       // Route to specific game handlers
       if (action.startsWith('tod_')) {
@@ -171,7 +162,6 @@ export async function handleGameAction(ctx: Context) {
       } else if (action.startsWith('ms_')) {
         await handleMinesweeperAction(ctx);
       } else if (action.startsWith('hk_')) {
-        await handleHaftKhabisAction(ctx);
       }
       return false;
   }
