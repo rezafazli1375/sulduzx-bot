@@ -3,7 +3,7 @@ import { Markup } from 'telegraf';
 import { getSetting, getSettingBool } from '../lib/settings.js';
 import { prisma } from '../lib/prisma.js';
 import { getText } from '../lib/texts.js';
-import { DEFAULT_MENU_BUTTONS, KNOWN_MENU_KEYS, colorPrefix } from '../lib/menu-defaults.js';
+import { DEFAULT_MENU_BUTTONS, KNOWN_MENU_KEYS, buttonStyle } from '../lib/menu-defaults.js';
 import { chunkColumns } from '../lib/ui.js';
 import { isFeatureBlocked } from '../lib/restrictions.js';
 
@@ -134,7 +134,12 @@ export async function sendMainMenu(ctx: Context, user: any, greeting?: string) {
         availability[item.key] !== false &&
         !isFeatureBlocked(user, item.key)
     )
-    .map((item) => Markup.button.callback(`${colorPrefix(item.color)}${item.label}`, item.key));
+    .map((item) => {
+      const button: any = Markup.button.callback(item.label, item.key);
+      const style = buttonStyle(item.color);
+      if (style) button.style = style;
+      return button;
+    });
 
   const keyboard = chunkColumns(visibleButtons, 2);
 

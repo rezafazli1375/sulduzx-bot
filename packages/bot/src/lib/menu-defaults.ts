@@ -15,18 +15,30 @@ export const DEFAULT_MENU_BUTTONS = [
 
 export const KNOWN_MENU_KEYS = new Set(DEFAULT_MENU_BUTTONS.map((item) => item.key));
 
-export const MENU_COLORS = ['none', 'red', 'orange', 'yellow', 'green', 'blue', 'purple'] as const;
+// Telegram Bot API now supports real inline-button colors through the `style`
+// field: "danger" (red), "success" (green) and "primary" (blue).
+export const MENU_COLORS = ['none', 'danger', 'success', 'primary'] as const;
+export type MenuColor = (typeof MENU_COLORS)[number];
 
-export const COLOR_DOTS: Record<string, string> = {
-  red: '🔴',
-  orange: '🟠',
-  yellow: '🟡',
-  green: '🟢',
-  blue: '🔵',
-  purple: '🟣',
+// Older installs stored emoji-dot colors. Map them to the closest real color
+// so existing menus keep their meaning without a DB migration.
+const LEGACY_COLORS: Record<string, MenuColor> = {
+  red: 'danger',
+  orange: 'danger',
+  green: 'success',
+  yellow: 'success',
+  blue: 'primary',
+  purple: 'primary',
 };
 
-export function colorPrefix(color?: string): string {
-  const dot = color ? COLOR_DOTS[color] : '';
-  return dot ? `${dot} ` : '';
+export function normalizeMenuColor(color?: string | null): MenuColor {
+  if (!color) return 'none';
+  const value = String(color).trim().toLowerCase();
+  if ((MENU_COLORS as readonly string[]).includes(value)) return value as MenuColor;
+  return LEGACY_COLORS[value] ?? 'none';
+}
+
+export function buttonStyle(color?: string | null): 'danger' | 'success' | 'primary' | undefined {
+  const normalized = normalizeMenuColor(color);
+  return normalized === 'none' ? undefined : normalized;
 }

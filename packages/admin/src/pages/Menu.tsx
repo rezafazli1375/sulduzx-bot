@@ -12,14 +12,21 @@ type MenuButton = {
 };
 
 const COLORS = [
-  { value: 'none', label: 'بدون رنگ' },
-  { value: 'red', label: 'قرمز' },
-  { value: 'orange', label: 'نارنجی' },
-  { value: 'yellow', label: 'زرد' },
-  { value: 'green', label: 'سبز' },
-  { value: 'blue', label: 'آبی' },
-  { value: 'purple', label: 'بنفش' },
+  { value: 'none', label: 'پیش‌فرض' },
+  { value: 'danger', label: 'قرمز' },
+  { value: 'success', label: 'سبز' },
+  { value: 'primary', label: 'آبی' },
 ];
+
+// Mirrors how Telegram renders the button `style` field.
+const PREVIEW_CLASSES: Record<string, string> = {
+  none: 'bg-white border border-gray-300 text-gray-800',
+  danger: 'bg-red-500 border border-red-600 text-white',
+  success: 'bg-green-500 border border-green-600 text-white',
+  primary: 'bg-blue-500 border border-blue-600 text-white',
+};
+
+const previewClass = (color: string) => PREVIEW_CLASSES[color] || PREVIEW_CLASSES.none;
 
 export default function Menu() {
   const [buttons, setButtons] = useState<MenuButton[]>([]);
@@ -94,11 +101,31 @@ export default function Menu() {
       <div className="card bg-blue-50 border-blue-200 flex items-start gap-3">
         <Info size={20} className="text-blue-600 mt-0.5 shrink-0" />
         <p className="text-sm text-blue-800 leading-6">
-          تلگرام امکان تغییر رنگ واقعی دکمه‌های Inline را نمی‌دهد؛ به همین دلیل رنگ انتخابی به‌صورت یک
-          نقطه رنگی (🔴🟠🟡🟢🔵🟣) ابتدای عنوان دکمه نمایش داده می‌شود. دکمه‌ها در ربات به‌صورت دو
-          ستونه چیده می‌شوند.
+          رنگ دکمه‌ها به‌صورت واقعی روی دکمه‌های شیشه‌ای تلگرام اعمال می‌شود (قرمز، سبز، آبی). کلاینت‌های
+          قدیمی تلگرام رنگ پیش‌فرض را نشان می‌دهند. رنگ‌های قبلی نقطه‌ای به نزدیک‌ترین رنگ واقعی تبدیل
+          شده‌اند و دکمه‌ها در ربات دو ستونه چیده می‌شوند.
         </p>
       </div>
+
+      {buttons.some((b) => b.isActive) && (
+        <div className="card">
+          <h2 className="text-lg font-bold text-gray-900 mb-1">پیش‌نمایش منو</h2>
+          <p className="text-xs text-gray-500 mb-4">همان‌طور که کاربر نهایی در ربات می‌بیند</p>
+          <div className="grid grid-cols-2 gap-2 max-w-lg">
+            {[...buttons]
+              .filter((b) => b.isActive)
+              .sort((a, b) => a.sortOrder - b.sortOrder)
+              .map((b) => (
+                <div
+                  key={b.id}
+                  className={`rounded-lg px-3 py-2 text-center text-sm font-medium truncate ${previewClass(b.color)}`}
+                >
+                  {b.label}
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
 
       {saved && (
         <div className="card bg-green-50 border-green-200 text-green-700 text-sm">
@@ -151,17 +178,24 @@ export default function Menu() {
                   <p className="text-xs text-gray-400 mt-1 font-mono">{button.key}</p>
                 </td>
                 <td className="py-4 px-6">
-                  <select
-                    value={button.color}
-                    onChange={(e) => update(button.id, { color: e.target.value })}
-                    className="input-field max-w-[140px]"
-                  >
-                    {COLORS.map((color) => (
-                      <option key={color.value} value={color.value}>
-                        {color.label}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={button.color}
+                      onChange={(e) => update(button.id, { color: e.target.value })}
+                      className="input-field max-w-[120px]"
+                    >
+                      {COLORS.map((color) => (
+                        <option key={color.value} value={color.value}>
+                          {color.label}
+                        </option>
+                      ))}
+                    </select>
+                    <span
+                      className={`px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap ${previewClass(button.color)}`}
+                    >
+                      نمونه
+                    </span>
+                  </div>
                 </td>
                 <td className="py-4 px-6">
                   <input
