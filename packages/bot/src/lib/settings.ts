@@ -118,6 +118,12 @@ const REQUIRED_DEFAULTS: Array<{
     type: "BOOLEAN",
     description: "بازی کلمه‌یاب فعال",
   },
+  {
+    key: "game_wordle_length",
+    value: "5",
+    type: "NUMBER",
+    description: "طول کلمه در بازی کلمه‌یاب (۴ تا ۸)",
+  },
 ];
 
 export async function ensureDefaultSettings(): Promise<void> {

@@ -29,7 +29,7 @@ const GAME_DEFS = [
     key: 'game_wordle_enabled',
     action: 'game_wordle',
     button: '🔤 کلمه‌یاب',
-    desc: '🔤 *کلمه‌یاب* — کلمه مخفی را در ۶ تلاش حدس بزن! (/kalame)',
+    desc: '🔤 *کلمه‌یاب* — کلمه را در گروه بنویس و زودتر از بقیه حدس بزن! (/kalame)',
   },
   {
     key: 'game_hokm_enabled',

@@ -125,7 +125,7 @@ export default function Games() {
       const payload = {
         ...formData,
         answer: formData.gameType === 'WORDLE' ? formData.text.trim() : formData.answer,
-        optionA: formData.gameType === 'WORDLE' ? '' : formData.optionA,
+        optionA: formData.optionA,
         optionB: formData.gameType === 'WORDLE' ? '' : formData.optionB,
         optionC: formData.gameType === 'WORDLE' ? '' : formData.optionC,
         optionD: formData.gameType === 'WORDLE' ? '' : formData.optionD,
@@ -314,7 +314,7 @@ export default function Games() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                {formData.gameType === 'WORDLE' ? 'کلمه مخفی' : 'متن سوال / چالش'}
+                {formData.gameType === 'WORDLE' ? 'کلمه' : 'متن سوال / چالش'}
               </label>
               <textarea
                 value={formData.text}
@@ -323,16 +323,34 @@ export default function Games() {
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 placeholder={
                   formData.gameType === 'WORDLE'
-                    ? 'کلمه مخفی را وارد کنید... (طول کلمه = تعداد حروفی که کاربر باید حدس بزند)'
+                    ? 'کلمه را وارد کنید... (مثلاً: مدرسه)'
                     : 'سوال یا چالش را وارد کنید...'
                 }
               />
               {formData.gameType === 'WORDLE' && (
                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  کلمه‌ی سخت‌تر = طول بیشتر (۶ تا ۹ حرف پیشنهاد می‌شود). حروف عربی ي/ك به‌صورت خودکار به ی/ک تبدیل می‌شوند.
+                  طول کلمه در بخش تنظیمات بازی (کلید game_wordle_length) تعیین می‌شود — همهٔ کلمات باید هم‌طول باشند (پیشنهاد: ۵ حرف). حروف عربی ي/ك خودکار به ی/ک تبدیل می‌شوند.
                 </p>
               )}
             </div>
+
+            {formData.gameType === 'WORDLE' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  معنی کلمه (برای راهنما)
+                </label>
+                <input
+                  type="text"
+                  value={formData.optionA}
+                  onChange={(e) => setFormData({ ...formData, optionA: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  placeholder="مثلاً: جای آموختن"
+                />
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  اگر خالی باشد، راهنما به‌جای معنی، یک حرف از کلمه را لو می‌دهد.
+                </p>
+              </div>
+            )}
 
             {formData.gameType !== 'WORDLE' && (
               <>

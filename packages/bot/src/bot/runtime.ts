@@ -10,6 +10,7 @@ import { mainMenuKeyboard } from '../lib/ui.js';
 import { handleStart } from './start.js';
 import { handleMenu } from './menu.js';
 import { handleGames, handleGameCommand } from './games/index.js';
+import { handleWordleText } from './games/wordle.js';
 import { handleFreeConfig } from './free-config.js';
 import { handleProxy } from './proxy.js';
 import { handleReferral } from './referral.js';
@@ -149,6 +150,11 @@ export function createBotInstance(botId: number, token: string): Telegraf {
         }
         // Ignore all other commands in groups
         return;
+      }
+      // کلمه‌یاب: حدس مستقیم با نوشتن کلمه در گروه
+      if (text) {
+        const handled = await handleWordleText(ctx, text);
+        if (handled) return;
       }
       // Ignore non-command messages in groups
       return;
