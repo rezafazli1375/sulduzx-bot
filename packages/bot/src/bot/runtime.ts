@@ -180,10 +180,22 @@ export function createBotInstance(botId: number, token: string): Telegraf {
       return null;
     }
 
-    const user = await findUserByCtx(ctx);
+    let user = await findUserByCtx(ctx);
     if (!user) {
-      await ctx.reply('❌ لطفاً ابتدا /start را بزنید.');
-      return null;
+      // Create user if not exists (works in both PV and groups)
+      const botId = getBotId(ctx);
+      const telegramId = telegramIdOf(ctx);
+      user = await prisma.user.create({
+        data: {
+          botId,
+          telegramId,
+          username: ctx.from?.username || null,
+          firstName: ctx.from?.first_name || null,
+          lastName: ctx.from?.last_name || null,
+          referralCode: generateReferralCode(),
+          referredBy: null,
+        },
+      });
     }
     if (user.isBlocked) {
       await ctx.reply('⛔️ شما مسدود شده‌اید.');
