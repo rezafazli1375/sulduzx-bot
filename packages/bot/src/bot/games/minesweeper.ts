@@ -120,7 +120,7 @@ function buildMsKeyboard(session: MsSession, showAll: boolean = false): any {
         label = '💣';
       } else if (cell.revealed) {
         if (cell.isBomb) label = '💥';
-        else label = cell.adjacentBombs > 0 ? String(cell.adjacentBombs) : '✅';
+        else label = String(cell.adjacentBombs);
       } else {
         label = '🟦';
       }

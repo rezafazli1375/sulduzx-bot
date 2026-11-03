@@ -77,29 +77,52 @@ function sortHand(hand: Card[]): Card[] {
 }
 
 function canPlayCard(card: Card, hand: Card[], currentTrick: { playerId: number; card: Card | null }[], trumpSuit: Suit | null): boolean {
-  if (currentTrick.every(t => t.card === null)) return true; // First to play
+  // First to play - can play any card
+  if (currentTrick.every(t => t.card === null)) return true;
   
   const firstCard = currentTrick.find(t => t.card !== null)?.card!;
-  const hasSuit = hand.some(c => c.suit === firstCard.suit);
+  const firstSuit = firstCard.suit;
+  const hasSuit = hand.some(c => c.suit === firstSuit);
   
+  // Must follow suit if you have it
   if (hasSuit) {
-    return card.suit === firstCard.suit;
+    return card.suit === firstSuit;
   }
-  return true; // Can play any card if don't have the suit
+  
+  // If you don't have the suit, you can play any card (including trump)
+  return true;
 }
 
 function determineTrickWinner(trick: { playerId: number; card: Card | null }[], trumpSuit: Suit): number {
   const firstCard = trick.find(t => t.card !== null)!.card!;
-  let winner = trick[0];
+  const firstSuit = firstCard.suit;
+  
+  let winner = trick.find(t => t.card !== null)!;
+  let highestRank = winner.card!.rank;
+  let hasTrump = winner.card!.suit === trumpSuit;
   
   for (const play of trick) {
     if (!play.card) continue;
-    if (play.card.suit === trumpSuit && winner.card!.suit !== trumpSuit) {
+    
+    // If this card is trump and current winner is not trump
+    if (play.card.suit === trumpSuit && !hasTrump) {
       winner = play;
-    } else if (play.card.suit === winner.card!.suit && play.card.rank > winner.card!.rank) {
-      winner = play;
-    } else if (play.card.suit === firstCard.suit && winner.card!.suit !== firstCard.suit && play.card.suit !== trumpSuit) {
-      winner = play;
+      highestRank = play.card.rank;
+      hasTrump = true;
+    }
+    // If both are trump, compare ranks
+    else if (play.card.suit === trumpSuit && hasTrump) {
+      if (play.card.rank > highestRank) {
+        winner = play;
+        highestRank = play.card.rank;
+      }
+    }
+    // If neither is trump and card follows suit, compare ranks
+    else if (play.card.suit === firstSuit && !hasTrump) {
+      if (play.card.rank > highestRank) {
+        winner = play;
+        highestRank = play.card.rank;
+      }
     }
   }
   
@@ -346,15 +369,37 @@ async function playBotsTurns(ctx: Context, session: HokmSession) {
     
     if (playableCards.length === 0) break;
     
-    // Simple bot strategy: play highest card of led suit, or trump if can't follow
-    const ledSuit = session.currentTrick.find(t => t.card !== null)?.card?.suit;
+    // Improved bot strategy
+    const firstCard = session.currentTrick.find(t => t.card !== null)?.card;
+    const ledSuit = firstCard?.suit;
+    const hasSuit = ledSuit && playableCards.some(c => c.suit === ledSuit);
+    
+    // Check if teammate is winning
+    const teammateIdx = (session.currentPlayer + 2) % 4;
+    const teammatePlay = session.currentTrick[teammateIdx];
+    let teammateWinning = false;
+    
+    if (teammatePlay?.card) {
+      const currentWinner = determineTrickWinner(session.currentTrick, session.trumpSuit!);
+      teammateWinning = currentWinner === teammateIdx;
+    }
+    
     let cardToPlay: Card;
     
-    if (ledSuit && playableCards.some(c => c.suit === ledSuit)) {
+    // If teammate is winning, play low card
+    if (teammateWinning) {
+      cardToPlay = playableCards.sort((a, b) => a.rank - b.rank)[0];
+    }
+    // If we have the led suit, play highest of that suit
+    else if (hasSuit) {
       cardToPlay = playableCards.filter(c => c.suit === ledSuit).sort((a, b) => b.rank - a.rank)[0];
-    } else if (session.trumpSuit && playableCards.some(c => c.suit === session.trumpSuit)) {
-      cardToPlay = playableCards.filter(c => c.suit === session.trumpSuit).sort((a, b) => b.rank - a.rank)[0];
-    } else {
+    }
+    // If we don't have the suit, try to trump with low trump
+    else if (session.trumpSuit && playableCards.some(c => c.suit === session.trumpSuit)) {
+      cardToPlay = playableCards.filter(c => c.suit === session.trumpSuit).sort((a, b) => a.rank - b.rank)[0];
+    }
+    // Otherwise play lowest card
+    else {
       cardToPlay = playableCards.sort((a, b) => a.rank - b.rank)[0];
     }
     
