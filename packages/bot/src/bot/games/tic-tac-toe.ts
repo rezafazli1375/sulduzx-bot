@@ -1,139 +1,145 @@
 import { Context, Markup } from 'telegraf';
 import { prisma } from '../../lib/prisma.js';
-import { findUserByCtx } from '../../lib/user.js';
 import { requireGroup, checkGameChannelJoin } from './utils.js';
+import {
+  TttBoard,
+  TttMode,
+  getTttMode,
+  createTttBoard,
+  checkTttWinner,
+  isTttBoardFull,
+} from './tic-tac-toe-logic.js';
 
 // ─── Types ───────────────────────────────────
-type Cell = 'X' | 'O' | null;
-type Board = Cell[][];
+interface TttPlayer {
+  id: number;
+  name: string;
+  mark: 'X' | 'O';
+}
 
 interface TttSession {
   chatId: number;
   messageId: number;
-  playerX: { id: number; name: string };
-  playerO: { id: number; name: string } | null;
+  mode: TttMode;
+  board: TttBoard;
+  playerX: TttPlayer | null;
+  playerO: TttPlayer | null;
   currentTurn: 'X' | 'O';
-  board: Board;
-  status: 'waiting' | 'playing' | 'finished';
+  status: 'choosing' | 'waiting' | 'playing' | 'finished';
+  winnerId: number | null;
+  winLine: [number, number][];
   createdAt: number;
 }
 
 const sessions = new Map<string, TttSession>();
 
-// صفحه: ۶ ستون افقی × ۷ ردیف عمودی — برنده: ۵ مهره پشت سر هم
-const ROWS = 7;
-const COLS = 6;
-const WIN_LENGTH = 5;
-
 function sessionKey(chatId: number): string {
   return `ttt:${chatId}`;
 }
 
-function createEmptyBoard(): Board {
-  return Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => null));
-}
-
-function renderBoard(board: Board): string {
-  const emojis: Record<string, string> = { X: '❌', O: '⭕', null: '⬜' };
-  return board
-    .map((row) => row.map((cell) => emojis[cell || 'null']).join(''))
-    .join('\n');
-}
-
-function checkWinner(board: Board): Cell {
-  const directions: [number, number][] = [
-    [0, 1],   // افقی
-    [1, 0],   // عمودی
-    [1, 1],   // مورب
-    [1, -1],  // مورب معکوس
-  ];
-
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
-      const cell = board[r][c];
-      if (!cell) continue;
-
-      for (const [dr, dc] of directions) {
-        let count = 0;
-        for (let k = 0; k < WIN_LENGTH; k++) {
-          const nr = r + dr * k;
-          const nc = c + dc * k;
-          if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS) break;
-          if (board[nr][nc] !== cell) break;
-          count++;
-        }
-        if (count === WIN_LENGTH) return cell;
-      }
-    }
-  }
-
-  return null;
-}
-
-function isBoardFull(board: Board): boolean {
-  return board.every((row) => row.every((cell) => cell !== null));
-}
-
+// ─── Keyboard ────────────────────────────────
 function buildGameKeyboard(session: TttSession): any {
-  if (session.status === 'waiting') {
+  if (session.status === 'choosing') {
     return Markup.inlineKeyboard([
-      [Markup.button.callback('🎮 پیوستن به بازی', 'ttt_join')],
-      [Markup.button.callback('▶️ شروع بازی', 'ttt_start')],
+      [
+        Markup.button.callback('🟦 کلاسیک ۳×۳', 'ttt_mode_classic'),
+        Markup.button.callback('🟦 حرفه‌ای ۶×۷', 'ttt_mode_pro'),
+      ],
       [Markup.button.callback('❌ لغو', 'ttt_cancel')],
     ]);
   }
 
-  const buttons = [];
-  for (let r = 0; r < ROWS; r++) {
-    const row = [];
-    for (let c = 0; c < COLS; c++) {
+  const { rows, cols } = session.mode;
+  const keyboard: any[][] = [];
+
+  for (let r = 0; r < rows; r++) {
+    const row: any[] = [];
+    for (let c = 0; c < cols; c++) {
       const cell = session.board[r][c];
-      const label = cell === 'X' ? '❌' : cell === 'O' ? '⭕' : '⬜';
-      const disabled = cell !== null || session.status === 'finished';
-      row.push(
-        Markup.button.callback(
-          label,
-          disabled ? `ttt_disabled_${r}_${c}` : `ttt_move_${r}_${c}`
-        )
+      const label = cell === 'X' ? '❌' : cell === 'O' ? '⭕' : '▫️';
+      const button: any = Markup.button.callback(
+        label,
+        cell ? `ttt_open_${r}_${c}` : `ttt_move_${r}_${c}`
       );
+      const isWinnerCell = session.winLine.some(([wr, wc]) => wr === r && wc === c);
+      if (isWinnerCell) button.style = 'success';
+      row.push(button);
     }
-    buttons.push(row);
+    keyboard.push(row);
+  }
+
+  if (session.status === 'waiting') {
+    keyboard.push([
+      Markup.button.callback('🎮 پیوستن به بازی', 'ttt_join'),
+      Markup.button.callback('▶️ شروع بازی', 'ttt_start'),
+    ]);
+    keyboard.push([Markup.button.callback('❌ لغو', 'ttt_cancel')]);
+    return Markup.inlineKeyboard(keyboard);
   }
 
   if (session.status === 'finished') {
-    buttons.push([Markup.button.callback('🔄 بازی جدید', 'ttt_new')]);
-  } else {
-    buttons.push([Markup.button.callback('❌ لغو بازی', 'ttt_cancel')]);
+    keyboard.push([
+      Markup.button.callback('🔄 بازی جدید', 'ttt_new'),
+      Markup.button.callback('🎲 تغییر حالت', 'ttt_mode_menu'),
+    ]);
+    keyboard.push([Markup.button.callback('🎙 منوی بازی', 'games')]);
+    return Markup.inlineKeyboard(keyboard);
   }
 
-  return Markup.inlineKeyboard(buttons);
+  keyboard.push([Markup.button.callback('❌ لغو بازی', 'ttt_cancel')]);
+  return Markup.inlineKeyboard(keyboard);
 }
 
-function getStatusText(session: TttSession): string {
+// ─── Message text ────────────────────────────
+function buildGameText(session: TttSession): string {
+  const lines: string[] = [];
+  lines.push(`❌⭕ *بازی دوز — ${session.mode.label}*`);
+  lines.push('');
+  lines.push(`📋 ${session.mode.description}`);
+  lines.push('');
+
+  const x = session.playerX
+    ? `${mentionUser(session.playerX.id, session.playerX.name)} — ❌`
+    : '❌ — منتظر بازیکن…';
+  const o = session.playerO
+    ? `${mentionUser(session.playerO.id, session.playerO.name)} — ⭕`
+    : '⭕ — منتظر بازیکن…';
+  lines.push(x);
+  lines.push(o);
+  lines.push('');
+
+  if (session.status === 'choosing') {
+    lines.push('🎯 *حالت بازی را انتخاب کنید:*');
+    lines.push('• کلاسیک ۳×۳ — سریع و آسان');
+    lines.push('• حرفه‌ای ۶×۷ — پنج مهرهٔ پشت سر هم');
+    return lines.join('\n');
+  }
+
   if (session.status === 'waiting') {
     if (!session.playerO) {
-      return '⏳ *منتظر بازیکن دوم...*\n' +
-        `👤 ${mentionUser(session.playerX.id, session.playerX.name)} (❌) آماده است؛ نفر دوم دکمه «🎮 پیوستن به بازی» را بزند.`;
+      lines.push('⏳ منتظر بازیکن دوم… نفر دوم دکمهٔ «🎮 پیوستن به بازی» را بزند.');
+    } else {
+      lines.push('✅ بازیکن دوم پیوست! شروع‌کننده دکمهٔ «▶️ شروع بازی» را بزند.');
     }
-    return '✅ *بازیکن دوم پیوست!*\n' +
-      `🎮 ${mentionUser(session.playerX.id, session.playerX.name)} دکمه «▶️ شروع بازی» را بزنید.`;
+    return lines.join('\n');
   }
 
-  const winner = checkWinner(session.board);
-  const full = isBoardFull(session.board);
-
-  if (winner) {
-    const winnerPlayer = winner === 'X' ? session.playerX : session.playerO;
-    return `🏆 *بازی تمام شد!*\n\n${winnerPlayer ? mentionUser(winnerPlayer.id, winnerPlayer.name) : winner} برنده شد!`;
+  if (session.status === 'finished') {
+    if (session.winnerId) {
+      const winner = session.playerX?.id === session.winnerId ? session.playerX : session.playerO;
+      lines.push(`🏆 *برنده:* ${winner ? mentionUser(winner.id, winner.name) : '—'}`);
+      lines.push(`⭐️ ${session.mode.points} امتیاز دریافت شد!`);
+    } else {
+      lines.push('🤝 *بازی مساوی شد!*');
+      lines.push('⭐️ ۱۰ امتیاز برای هر دو بازیکن');
+    }
+    return lines.join('\n');
   }
 
-  if (full) {
-    return '🤝 *بازی مساوی شد!*';
-  }
-
-  const currentPlayer = session.currentTurn === 'X' ? session.playerX : session.playerO;
+  const turn = session.currentTurn === 'X' ? session.playerX : session.playerO;
   const symbol = session.currentTurn === 'X' ? '❌' : '⭕';
-  return `🎮 *نوبت:* ${mentionUser(currentPlayer!.id, currentPlayer!.name)} ${symbol}`;
+  lines.push(`🎯 *نوبت:* ${turn ? mentionUser(turn.id, turn.name) : '—'} ${symbol}`);
+  return lines.join('\n');
 }
 
 // ─── Start Tic Tac Toe ───────────────────────
@@ -145,32 +151,31 @@ export async function handleTicTacToe(ctx: Context) {
   const key = sessionKey(chatId);
 
   const existing = sessions.get(key);
-  if (existing && existing.status !== 'finished' && Date.now() - existing.createdAt < 300000) {
+  if (existing && existing.status !== 'finished' && Date.now() - existing.createdAt < 1800000) {
     await ctx.reply('⏳ یک بازی دوز در حال انجام است. لطفاً صبر کنید تا تمام شود.');
     return;
   }
 
-  const fromUser = ctx.from!;
+  const mode = getTttMode('classic');
   const session: TttSession = {
     chatId,
     messageId: 0,
-    playerX: { id: fromUser.id, name: fromUser.first_name || 'بازیکن' },
+    mode,
+    board: createTttBoard(mode.rows, mode.cols),
+    playerX: null,
     playerO: null,
     currentTurn: 'X',
-    board: createEmptyBoard(),
-    status: 'waiting',
+    status: 'choosing',
+    winnerId: null,
+    winLine: [],
     createdAt: Date.now(),
   };
   sessions.set(key, session);
 
-  const msg = await ctx.reply(
-    `❌⭕ *بازی دوز*\n\n` +
-    `📋 صفحه: ۶×۷ (۶ افقی، ۷ عمودی)\n` +
-    `🎯 برنده: ۵ مهره پشت سر هم (افقی، عمودی یا مورب)\n\n` +
-    `🎮 ${mentionUser(fromUser.id, fromUser.first_name || 'بازیکن')} (❌) بازی را شروع کرد!\n\n` +
-    `📌 برای شروع، نفر دوم دکمه «🎮 پیوستن به بازی» را بزند؛ سپس شروع‌کننده «▶️ شروع بازی» را بزند.`,
-    { parse_mode: 'Markdown', ...buildGameKeyboard(session) }
-  );
+  const msg = await ctx.reply(buildGameText(session), {
+    parse_mode: 'Markdown',
+    ...buildGameKeyboard(session),
+  });
 
   session.messageId = msg.message_id;
 }
@@ -189,22 +194,67 @@ export async function handleTicTacToeAction(ctx: Context) {
 
   const userId = ctx.from!.id;
 
-  // Handle disabled cells
-  if (action.startsWith('ttt_disabled_')) {
-    await ctx.answerCbQuery('این خانه پر است!');
+  // ── انتخاب حالت ──
+  if (action.startsWith('ttt_mode_')) {
+    const modeKey = action.replace('ttt_mode_', '');
+    if (modeKey === 'menu') {
+      session.status = 'choosing';
+      session.playerX = null;
+      session.playerO = null;
+      session.winLine = [];
+      session.board = createTttBoard(session.mode.rows, session.mode.cols);
+      await ctx.answerCbQuery('🎲 حالت بازی را انتخاب کنید.');
+      await updateGameMessage(ctx, session);
+      return;
+    }
+
+    const mode = getTttMode(modeKey);
+    session.mode = mode;
+    session.board = createTttBoard(mode.rows, mode.cols);
+    session.playerX = null;
+    session.playerO = null;
+    session.currentTurn = 'X';
+    session.winnerId = null;
+    session.winLine = [];
+    session.status = 'waiting';
+
+    // آغازگر بازی به‌صورت خودکار بازیکن اول (❌) می‌شود
+    if (!session.playerX) {
+      session.playerX = {
+        id: userId,
+        name: ctx.from!.first_name || 'بازیکن ۱',
+        mark: 'X',
+      };
+    }
+
+    await ctx.answerCbQuery(`🎯 حالت: ${mode.label}`);
+    await updateGameMessage(ctx, session);
     return;
   }
 
-  // Join game
+  // ── پیوستن ──
   if (action === 'ttt_join') {
     if (session.status !== 'waiting') {
       await ctx.answerCbQuery('بازی قبلاً شروع شده!');
       return;
     }
-    if (userId === session.playerX.id) {
-      await ctx.answerCbQuery('نفر اول باید صبر کند تا نفر دوم بپیوندد!');
+
+    if (!session.playerX) {
+      session.playerX = {
+        id: userId,
+        name: ctx.from!.first_name || 'بازیکن ۱',
+        mark: 'X',
+      };
+      await ctx.answerCbQuery('🎮 به بازی پیوستی! منتظر بازیکن دوم باشید.');
+      await updateGameMessage(ctx, session);
       return;
     }
+
+    if (session.playerX.id === userId) {
+      await ctx.answerCbQuery('شما بازیکن اول هستید؛ صبر کنید تا نفر دوم بیاید.');
+      return;
+    }
+
     if (session.playerO) {
       await ctx.answerCbQuery(
         session.playerO.id === userId
@@ -214,20 +264,24 @@ export async function handleTicTacToeAction(ctx: Context) {
       return;
     }
 
-    session.playerO = { id: userId, name: ctx.from!.first_name || 'بازیکن ۲' };
+    session.playerO = {
+      id: userId,
+      name: ctx.from!.first_name || 'بازیکن ۲',
+      mark: 'O',
+    };
 
     await ctx.answerCbQuery('🎮 به بازی پیوستی! شروع‌کننده بازی را استارت کند.');
     await updateGameMessage(ctx, session);
     return;
   }
 
-  // Start game (host only, needs the second player)
+  // ── شروع بازی ──
   if (action === 'ttt_start') {
     if (session.status !== 'waiting') {
       await ctx.answerCbQuery('بازی قبلاً شروع شده!');
       return;
     }
-    if (userId !== session.playerX.id) {
+    if (!session.playerX || session.playerX.id !== userId) {
       await ctx.answerCbQuery('❌ فقط شروع‌کننده بازی می‌تواند بازی را استارت بزند.');
       return;
     }
@@ -244,9 +298,13 @@ export async function handleTicTacToeAction(ctx: Context) {
     return;
   }
 
-  // Cancel game
+  // ── لغو ──
   if (action === 'ttt_cancel') {
-    if (userId !== session.playerX.id && userId !== session.playerO?.id) {
+    if (
+      session.playerX?.id !== userId &&
+      session.playerO?.id !== userId &&
+      session.status !== 'choosing'
+    ) {
       await ctx.answerCbQuery('❌ فقط بازیکنان می‌توانند بازی را لغو کنند.');
       return;
     }
@@ -258,110 +316,130 @@ export async function handleTicTacToeAction(ctx: Context) {
     return;
   }
 
-  // New game
+  // ── بازی جدید ──
   if (action === 'ttt_new') {
-    sessions.delete(key);
-    await ctx.answerCbQuery();
-    await handleTicTacToe(ctx);
+    session.playerX = null;
+    session.playerO = null;
+    session.currentTurn = 'X';
+    session.status = 'waiting';
+    session.winnerId = null;
+    session.winLine = [];
+    session.board = createTttBoard(session.mode.rows, session.mode.cols);
+
+    await ctx.answerCbQuery('🔄 بازی جدید آماده شد — منتظر بازیکن!');
+    await updateGameMessage(ctx, session);
     return;
   }
 
-  // Make move
+  // ── کلیک روی خانهٔ پرشده ──
+  if (action.startsWith('ttt_open_')) {
+    await ctx.answerCbQuery('این خانه پر است!');
+    return;
+  }
+
+  // ── حرکت ──
   if (action.startsWith('ttt_move_')) {
     if (session.status !== 'playing') {
-      await ctx.answerCbQuery('بازی هنوز شروع نشده!');
+      await ctx.answerCbQuery('⏳ بازی هنوز شروع نشده!');
       return;
     }
 
-    const [, , rowStr, colStr] = action.split('_');
-    const row = parseInt(rowStr);
-    const col = parseInt(colStr);
+    const parts = action.split('_');
+    const row = parseInt(parts[2], 10);
+    const col = parseInt(parts[3], 10);
+    const { rows, cols } = session.mode;
 
-    // Check if it's the player's turn
-    const isPlayerX = userId === session.playerX.id;
-    const isPlayerO = userId === session.playerO?.id;
-
-    if (isPlayerX && session.currentTurn !== 'X') {
-      await ctx.answerCbQuery('⏳ نوبت شما نیست! نوبت ⭕ است.');
-      return;
-    }
-    if (isPlayerO && session.currentTurn !== 'O') {
-      await ctx.answerCbQuery('⏳ نوبت شما نیست! نوبت ❌ است.');
-      return;
-    }
-    if (!isPlayerX && !isPlayerO) {
-      await ctx.answerCbQuery('❌ شما بازیکن این بازی نیستید!');
+    if (
+      Number.isNaN(row) ||
+      Number.isNaN(col) ||
+      row < 0 ||
+      row >= rows ||
+      col < 0 ||
+      col >= cols
+    ) {
+      await ctx.answerCbQuery('❌ خانهٔ نامعتبر!');
       return;
     }
 
-    // Check if cell is empty
+    const player = session.currentTurn === 'X' ? session.playerX : session.playerO;
+    if (!player) {
+      await ctx.answerCbQuery('❌ بازیکنی برای نوبت فعلی نیست.');
+      return;
+    }
+    if (player.id !== userId) {
+      await ctx.answerCbQuery('⏳ نوبت شما نیست!');
+      return;
+    }
+
     if (session.board[row][col] !== null) {
       await ctx.answerCbQuery('❌ این خانه پر است!');
       return;
     }
 
-    // Make the move
     session.board[row][col] = session.currentTurn;
 
-    // Check for winner
-    const winner = checkWinner(session.board);
-    const full = isBoardFull(session.board);
+    const win = checkTttWinner(session.board, rows, cols, session.mode.winLength);
+    const full = isTttBoardFull(session.board, rows, cols);
 
-    if (winner || full) {
+    if (win || full) {
       session.status = 'finished';
-
-      // Award points to winner
-      if (winner) {
-        const winnerPlayer = winner === 'X' ? session.playerX : session.playerO;
-        if (winnerPlayer) {
-          try {
-            const user = await prisma.user.findFirst({
-              where: { telegramId: BigInt(winnerPlayer.id), botId: (ctx as any).botId },
-            });
-            if (user) {
-              const rewardPoints = 25;
-              await prisma.user.update({
-                where: { id: user.id },
-                data: { points: { increment: rewardPoints } },
-              });
-              await prisma.pointTransaction.create({
-                data: {
-                  userId: user.id,
-                  amount: rewardPoints,
-                  type: 'BONUS',
-                  description: `بازی دوز — برنده`,
-                },
-              });
-            }
-          } catch {}
-        }
+      if (win) {
+        session.winLine = win.line;
+        const winner = win.mark === 'X' ? session.playerX : session.playerO;
+        session.winnerId = winner?.id ?? null;
       }
 
-      await ctx.answerCbQuery(winner ? '🏆 بازی تمام شد!' : '🤝 مساوی!');
+      await awardTttPoints(ctx, session);
+      await ctx.answerCbQuery(win ? '🏆 بازی تمام شد!' : '🤝 مساوی!');
       await updateGameMessage(ctx, session);
       return;
     }
 
-    // Switch turn
     session.currentTurn = session.currentTurn === 'X' ? 'O' : 'X';
     await ctx.answerCbQuery();
     await updateGameMessage(ctx, session);
   }
 }
 
+async function awardTttPoints(ctx: Context, session: TttSession) {
+  const botId = (ctx as any).botId;
+
+  const players = [session.playerX, session.playerO].filter(Boolean) as TttPlayer[];
+  for (const player of players) {
+    const amount =
+      session.winnerId === null
+        ? 10
+        : session.winnerId === player.id
+        ? session.mode.points
+        : 0;
+    if (amount <= 0) continue;
+
+    try {
+      const user = await prisma.user.findFirst({
+        where: { telegramId: BigInt(player.id), botId },
+      });
+      if (!user) continue;
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { points: { increment: amount } },
+      });
+      await prisma.pointTransaction.create({
+        data: {
+          userId: user.id,
+          amount,
+          type: 'BONUS',
+          description:
+            session.winnerId === null ? 'بازی دوز — مساوی' : 'بازی دوز — برنده',
+        },
+      });
+    } catch {}
+  }
+}
+
 async function updateGameMessage(ctx: Context, session: TttSession) {
-  const statusText = getStatusText(session);
-  const boardStr = renderBoard(session.board);
-
-  const text =
-    `❌⭕ *بازی دوز*\n\n` +
-    `👤 ${mentionUser(session.playerX.id, session.playerX.name)} — ❌\n` +
-    `👤 ${session.playerO ? mentionUser(session.playerO.id, session.playerO.name) : '...'} — ⭕\n\n` +
-    `${boardStr}\n\n` +
-    `${statusText}`;
-
   try {
-    await ctx.editMessageText(text, {
+    await ctx.editMessageText(buildGameText(session), {
       parse_mode: 'Markdown',
       ...buildGameKeyboard(session),
     });
@@ -376,7 +454,7 @@ function mentionUser(userId: number, name: string): string {
 setInterval(() => {
   const now = Date.now();
   for (const [key, session] of sessions.entries()) {
-    if (now - session.createdAt > 600000) {
+    if (now - session.createdAt > 3600000) {
       sessions.delete(key);
     }
   }

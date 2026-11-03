@@ -17,13 +17,13 @@ const GAME_DEFS = [
     key: 'game_tic_tac_toe_enabled',
     action: 'game_tic_tac_toe',
     button: '❌⭕ بازی دوز',
-    desc: '❌⭕ *دوز* — صفحه ۶×۷، پنج مهره پشت سر هم بچین! (/dooz)',
+    desc: '❌⭕ *دوز* — کلاسیک ۳×۳ یا حرفه‌ای ۶×۷! (/dooz)',
   },
   {
     key: 'game_minesweeper_enabled',
     action: 'game_minesweeper',
     button: '💣 پیدا کردن بمب',
-    desc: '💣 *مین‌روب* — صفحه ۶×۷ با ۸ مین، مراقب باش! (/meen)',
+    desc: '💣 *مین‌روب* — مین‌ها را پیدا کنید! حف، پرچم‌گذاری و سه سطح سختی (/meen)',
   },
   {
     key: 'game_wordle_enabled',
@@ -35,7 +35,7 @@ const GAME_DEFS = [
     key: 'game_hokm_enabled',
     action: 'game_hokm',
     button: '🃏 حکم',
-    desc: '🃏 *حکم* — بازی ورق کلاسیک ایرانی، حکم را با حکم بزن! (/hokm)',
+    desc: '🃏 *حکم* — چهارنفره، حاکم حکم را می‌زند و ۷ تریک برنده است (/hokm)',
   },
 ];
 

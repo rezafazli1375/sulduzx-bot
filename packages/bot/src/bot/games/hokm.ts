@@ -1,24 +1,48 @@
 import { Context, Markup } from 'telegraf';
 import { prisma } from '../../lib/prisma.js';
-import { findUserByCtx } from '../../lib/user.js';
 import { requireGroup, checkGameChannelJoin } from './utils.js';
+import {
+  Card,
+  Suit,
+  SUITS,
+  SUIT_EMOJI,
+  SUIT_NAME_FA,
+  TRICK_POINTS_TO_WIN,
+  TOTAL_TRICKS,
+  cardLabel,
+  dealHokmHands,
+  sortHand,
+  findAceHolder,
+  teamOf,
+  isTrickComplete,
+  canPlayCard,
+  determineTrickWinner,
+  chooseBotCard,
+} from './hokm-logic.js';
 
 // ─── Types ───────────────────────────────────
-type Suit = 'hearts' | 'diamonds' | 'clubs' | 'spades';
-type Card = { suit: Suit; rank: number; };
+interface HokmPlayer {
+  id: number;
+  name: string;
+  hand: Card[];
+  tricks: number;
+  isBot: boolean;
+}
 
 interface HokmSession {
   chatId: number;
   messageId: number;
-  players: { id: number; name: string; hand: Card[]; tricks: number; isBot: boolean }[];
+  players: HokmPlayer[];
   currentPlayer: number;
   trumpSuit: Suit | null;
-  currentTrick: { playerId: number; card: Card | null }[];
-  deck: Card[];
+  rulerSeat: number;
+  currentTrick: { seat: number; card: Card | null }[];
   status: 'waiting' | 'bidding' | 'playing' | 'finished';
-  humanPlayerId: number;
-  round: number;
-  scores: { team1: number; team2: number };
+  humanSeat: number;
+  teamScores: [number, number];
+  lastWinnerSeat: number | null;
+  result: { winnerTeam: 0 | 1; kot: boolean; su: boolean } | null;
+  busy: boolean;
   createdAt: number;
 }
 
@@ -28,107 +52,16 @@ function sessionKey(chatId: number): string {
   return `hokm:${chatId}`;
 }
 
-// ─── Card utilities ──────────────────────────
-const suits: Suit[] = ['hearts', 'diamonds', 'clubs', 'spades'];
-const suitEmojis: Record<Suit, string> = {
-  hearts: '❤️',
-  diamonds: '♦️',
-  clubs: '♣️',
-  spades: '♠️',
-};
-
-function createDeck(): Card[] {
-  const deck: Card[] = [];
-  for (const suit of suits) {
-    for (let rank = 2; rank <= 14; rank++) { // 2-10, J=11, Q=12, K=13, A=14
-      deck.push({ suit, rank });
-    }
-  }
-  return deck;
+// ─── Helpers ─────────────────────────────────
+function emptyTrick(): { seat: number; card: Card | null }[] {
+  return [0, 1, 2, 3].map((seat) => ({ seat, card: null }));
 }
 
-function shuffleDeck(deck: Card[]): Card[] {
-  const shuffled = [...deck];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-  return shuffled;
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function dealCards(session: HokmSession) {
-  const deck = shuffleDeck(createDeck());
-  for (let i = 0; i < 4; i++) {
-    session.players[i].hand = deck.slice(i * 13, (i + 1) * 13);
-    session.players[i].tricks = 0;
-  }
-}
-
-function getCardEmoji(card: Card): string {
-  const rankStr = card.rank === 14 ? 'A' : card.rank === 13 ? 'K' : card.rank === 12 ? 'Q' : card.rank === 11 ? 'J' : String(card.rank);
-  return `${suitEmojis[card.suit]}${rankStr}`;
-}
-
-function sortHand(hand: Card[]): Card[] {
-  return [...hand].sort((a, b) => {
-    if (a.suit !== b.suit) return suits.indexOf(a.suit) - suits.indexOf(b.suit);
-    return a.rank - b.rank;
-  });
-}
-
-function canPlayCard(card: Card, hand: Card[], currentTrick: { playerId: number; card: Card | null }[], trumpSuit: Suit | null): boolean {
-  // First to play - can play any card
-  if (currentTrick.every(t => t.card === null)) return true;
-  
-  const firstCard = currentTrick.find(t => t.card !== null)?.card!;
-  const firstSuit = firstCard.suit;
-  const hasSuit = hand.some(c => c.suit === firstSuit);
-  
-  // Must follow suit if you have it
-  if (hasSuit) {
-    return card.suit === firstSuit;
-  }
-  
-  // If you don't have the suit, you can play any card (including trump)
-  return true;
-}
-
-function determineTrickWinner(trick: { playerId: number; card: Card | null }[], trumpSuit: Suit): number {
-  const firstCard = trick.find(t => t.card !== null)!.card!;
-  const firstSuit = firstCard.suit;
-  
-  let winner = trick.find(t => t.card !== null)!;
-  let highestRank = winner.card!.rank;
-  let hasTrump = winner.card!.suit === trumpSuit;
-  
-  for (const play of trick) {
-    if (!play.card) continue;
-    
-    // If this card is trump and current winner is not trump
-    if (play.card.suit === trumpSuit && !hasTrump) {
-      winner = play;
-      highestRank = play.card.rank;
-      hasTrump = true;
-    }
-    // If both are trump, compare ranks
-    else if (play.card.suit === trumpSuit && hasTrump) {
-      if (play.card.rank > highestRank) {
-        winner = play;
-        highestRank = play.card.rank;
-      }
-    }
-    // If neither is trump and card follows suit, compare ranks
-    else if (play.card.suit === firstSuit && !hasTrump) {
-      if (play.card.rank > highestRank) {
-        winner = play;
-        highestRank = play.card.rank;
-      }
-    }
-  }
-  
-  return winner.playerId;
-}
-
+// ─── Keyboard ────────────────────────────────
 function buildHokmKeyboard(session: HokmSession): any {
   if (session.status === 'waiting') {
     return Markup.inlineKeyboard([
@@ -138,56 +71,141 @@ function buildHokmKeyboard(session: HokmSession): any {
   }
 
   if (session.status === 'bidding') {
-    const humanPlayer = session.players.find(p => p.id === session.humanPlayerId)!;
-    const buttons = [];
-    
-    // Show hand
-    const handStr = sortHand(humanPlayer.hand).map(c => getCardEmoji(c)).join(' ');
-    
-    // Trump selection buttons
-    buttons.push([Markup.button.callback('❤️ حکم دل', 'hokm_trump_hearts')]);
-    buttons.push([Markup.button.callback('♦️ حکم خشت', 'hokm_trump_diamonds')]);
-    buttons.push([Markup.button.callback('♣️ حکم خاج', 'hokm_trump_clubs')]);
-    buttons.push([Markup.button.callback('♠️ حکم پیک', 'hokm_trump_spades')]);
-    
-    return Markup.inlineKeyboard(buttons);
-  }
-
-  if (session.status === 'playing') {
-    const humanPlayer = session.players.find(p => p.id === session.humanPlayerId)!;
-    const buttons = [];
-    
-    if (session.currentPlayer === session.players.findIndex(p => p.id === session.humanPlayerId)) {
-      // Human's turn - show playable cards
-      const playableCards = humanPlayer.hand.filter(c => 
-        canPlayCard(c, humanPlayer.hand, session.currentTrick, session.trumpSuit)
-      );
-      
-      const cardButtons = playableCards.map((card, idx) => 
-        Markup.button.callback(getCardEmoji(card), `hokm_play_${idx}`)
-      );
-      
-      // Arrange in rows of 4
-      for (let i = 0; i < cardButtons.length; i += 4) {
-        buttons.push(cardButtons.slice(i, i + 4));
-      }
-    } else {
-      buttons.push([Markup.button.callback('⏳ نوبت بازیکن دیگر...', 'hokm_wait')]);
-    }
-    
-    buttons.push([Markup.button.callback('❌ لغو بازی', 'hokm_cancel')]);
-    
-    return Markup.inlineKeyboard(buttons);
+    return Markup.inlineKeyboard([
+      [
+        Markup.button.callback('❤️ حکم دل', 'hokm_trump_hearts'),
+        Markup.button.callback('♦️ حکم خشت', 'hokm_trump_diamonds'),
+      ],
+      [
+        Markup.button.callback('♣️ حکم خاج', 'hokm_trump_clubs'),
+        Markup.button.callback('♠️ حکم پیک', 'hokm_trump_spades'),
+      ],
+      [Markup.button.callback('❌ لغو', 'hokm_cancel')],
+    ]);
   }
 
   if (session.status === 'finished') {
     return Markup.inlineKeyboard([
       [Markup.button.callback('🔄 بازی جدید', 'hokm_new')],
-      [Markup.button.callback('🔙 منوی بازی', 'games')],
+      [Markup.button.callback('🎙 منوی بازی', 'games')],
     ]);
   }
 
-  return Markup.inlineKeyboard([]);
+  const keyboard: any[][] = [];
+  const human = session.players[session.humanSeat];
+
+  if (session.currentPlayer === session.humanSeat) {
+    const playable = human.hand.filter((card) =>
+      canPlayCard(card, human.hand, session.currentTrick, session.trumpSuit)
+    );
+
+    if (playable.length === 0) {
+      keyboard.push([Markup.button.callback('❌ کارت قانونی ندارید', 'hokm_wait')]);
+    } else {
+      const cardButtons = playable.map((card) =>
+        Markup.button.callback(cardLabel(card), `hokm_play_${card.suit}_${card.rank}`)
+      );
+      for (let i = 0; i < cardButtons.length; i += 4) {
+        keyboard.push(cardButtons.slice(i, i + 4));
+      }
+    }
+  } else {
+    keyboard.push([Markup.button.callback('⏳ نوبت بازیکن دیگر است', 'hokm_wait')]);
+  }
+
+  keyboard.push([Markup.button.callback('❌ لغو بازی', 'hokm_cancel')]);
+  return Markup.inlineKeyboard(keyboard);
+}
+
+// ─── Message text ────────────────────────────
+function buildHokmText(session: HokmSession): string {
+  const lines: string[] = [];
+  lines.push('🃏 *بازی حکم*');
+  lines.push('');
+
+  if (session.status === 'waiting') {
+    lines.push('👥 *۴ بازیکن، ۲ تیم:*');
+    lines.push('• تیم شما: شما + بازیکن ۳');
+    lines.push('• تیم مقابل: بازیکن ۲ + بازیکن ۴');
+    lines.push('');
+    lines.push('📋 *قوانین استاندارد حکم:*');
+    lines.push('• ۵۲ کارت؛ هر نفر ۱۳ کارت (پخش ۵-۴-۴)');
+    lines.push('• یک خال به‌عنوان «حکم» انتخاب می‌شود؛ دارندهٔ اَس حکم، **حاکم** می‌شود و اول بازی می‌کند');
+    lines.push('• باید خال خواسته‌شده را بازی کنید؛ اگر نداشتید، هر کارتی (حتی حکم) مجاز است');
+    lines.push('• حکم بر همهٔ خال‌ها می‌زند؛ برندهٔ هر تریک، تریک بعدی را شروع می‌کند');
+    lines.push(`• تیمی که ${TRICK_POINTS_TO_WIN} تریک بگیرد برندهٔ بازی است`);
+    lines.push('• کوت: تیمی که هیچ تریکی نگیرد، دو برابر باخته');
+    lines.push('');
+    lines.push('🎯 برای شروع، دکمهٔ «شروع بازی» را بزنید.');
+    return lines.join('\n');
+  }
+
+  const human = session.players[session.humanSeat];
+
+  if (session.status === 'bidding') {
+    lines.push('🎯 *خال حکم را انتخاب کنید:*');
+    lines.push('');
+    lines.push(`🂠 *دست شما (${human.hand.length} کارت):*`);
+    lines.push(sortHand(human.hand).map((c) => cardLabel(c)).join(' '));
+    lines.push('');
+    lines.push('📌 دارندهٔ اَس خال انتخابی، «حاکم» می‌شود و بازی را شروع می‌کند.');
+    return lines.join('\n');
+  }
+
+  if (session.status === 'finished' && session.result) {
+    const humanTeam = teamOf(session.humanSeat);
+    const humanWon = session.result.winnerTeam === humanTeam;
+    lines.push('🏆 *بازی تمام شد!*');
+    lines.push('');
+    lines.push(`📊 *نتیجه:* تیم شما ${session.teamScores[humanTeam]} | تیم مقابل ${session.teamScores[humanTeam === 0 ? 1 : 0]}`);
+    lines.push('');
+    lines.push(humanWon ? '🎉 *تیم شما برنده شد!*' : '😔 *تیم شما باخت!*');
+    if (session.result.kot) {
+      lines.push('🃏 *کوت!* تیم مقابل هیچ تریکی نگرفت — دو برابر باخت.');
+    }
+    if (session.result.su) {
+      lines.push('🎊 *سو!* یک بازیکن تمام ۱۳ تریک را گرفت.');
+    }
+    if (humanWon) {
+      const points = session.result.kot ? 120 : session.result.su ? 100 : 60;
+      lines.push(`⭐️ ${points} امتیاز دریافت شد!`);
+    }
+    lines.push('');
+    lines.push('🂠 *تریک هر بازیکن:*');
+    for (const player of session.players) {
+      lines.push(`• ${player.name}: ${player.tricks} تریک`);
+    }
+    return lines.join('\n');
+  }
+
+  // ── در حال بازی ──
+  const myTeam = teamOf(session.humanSeat);
+  const otherTeam = myTeam === 0 ? 1 : 0;
+
+  lines.push(`🎯 *حکم:* ${session.trumpSuit ? SUIT_EMOJI[session.trumpSuit] + ' ' + SUIT_NAME_FA[session.trumpSuit] : '—'}`);
+  lines.push(`👑 *حاکم:* ${session.players[session.rulerSeat].name}`);
+  lines.push(`📊 *تریک‌ها:* تیم شما ${session.teamScores[myTeam]} | تیم مقابل ${session.teamScores[otherTeam]}`);
+  lines.push('');
+  lines.push(`🂠 *دست شما (${human.hand.length} کارت):*`);
+  lines.push(sortHand(human.hand).map((c) => cardLabel(c)).join(' ') || '—');
+  lines.push('');
+  lines.push('🎴 *تریک جاری:*');
+  for (let seat = 0; seat < 4; seat++) {
+    const played = session.currentTrick[seat]?.card;
+    lines.push(`• ${session.players[seat].name}: ${played ? cardLabel(played) : '—'}`);
+  }
+  lines.push('');
+  lines.push(`👤 *نوبت:* ${session.players[session.currentPlayer].name}`);
+  if (session.currentPlayer === session.humanSeat) {
+    const played = session.currentTrick.find((t) => t.card !== null)?.card;
+    if (played) {
+      lines.push(`⚠️ باید ${SUIT_NAME_FA[played.suit]} بازی کنید (خال خواسته‌شده).`);
+    } else {
+      lines.push('🃏 کارت دلخواه را بازی کنید.');
+    }
+  }
+
+  return lines.join('\n');
 }
 
 // ─── Start Hokm ──────────────────────────────
@@ -199,52 +217,39 @@ export async function handleHokm(ctx: Context) {
   const key = sessionKey(chatId);
 
   const existing = sessions.get(key);
-  if (existing && existing.status !== 'finished' && Date.now() - existing.createdAt < 1200000) {
+  if (existing && existing.status !== 'finished' && Date.now() - existing.createdAt < 1800000) {
     await ctx.reply('⏳ یک بازی حکم در حال انجام است. لطفاً صبر کنید تا تمام شود.');
     return;
   }
 
   const fromUser = ctx.from!;
-
   const session: HokmSession = {
     chatId,
     messageId: 0,
     players: [
-      { id: fromUser.id, name: fromUser.first_name || 'شما', hand: [], tricks: 0, isBot: false },
-      { id: -1, name: 'بازیکن ۲ (Bot)', hand: [], tricks: 0, isBot: true },
-      { id: -2, name: 'بازیکن ۳ (Bot)', hand: [], tricks: 0, isBot: true },
-      { id: -3, name: 'بازیکن ۴ (Bot)', hand: [], tricks: 0, isBot: true },
+      { id: fromUser.id, name: 'شما', hand: [], tricks: 0, isBot: false },
+      { id: -1, name: 'بازیکن ۲', hand: [], tricks: 0, isBot: true },
+      { id: -2, name: 'بازیکن ۳', hand: [], tricks: 0, isBot: true },
+      { id: -3, name: 'بازیکن ۴', hand: [], tricks: 0, isBot: true },
     ],
     currentPlayer: 0,
     trumpSuit: null,
-    currentTrick: [],
-    deck: [],
+    rulerSeat: 0,
+    currentTrick: emptyTrick(),
     status: 'waiting',
-    humanPlayerId: fromUser.id,
-    round: 1,
-    scores: { team1: 0, team2: 0 },
+    humanSeat: 0,
+    teamScores: [0, 0],
+    lastWinnerSeat: null,
+    result: null,
+    busy: false,
     createdAt: Date.now(),
   };
   sessions.set(key, session);
 
-  const msg = await ctx.reply(
-    `🃏 *حکم*\n\n` +
-    `🎮 ${mentionUser(fromUser.id, fromUser.first_name || 'بازیکن')} بازی را شروع کرد!\n\n` +
-    `👥 *بازیکنان:*\n` +
-    `• شما (تیم ۱)\n` +
-    `• بازیکن ۲ (Bot - تیم ۱)\n` +
-    `• بازیکن ۳ (Bot - تیم ۲)\n` +
-    `• بازیکن ۴ (Bot - تیم ۲)\n\n` +
-    `📋 *قوانین:*\n` +
-    `• بازی ۴ نفره با ۵۲ کارت\n` +
-    `• هر نفر ۱۳ کارت\n` +
-    `• حکم = خال برنده\n` +
-    `• تیم اول: شما + بازیکن ۲\n` +
-    `• تیم دوم: بازیکن ۳ + بازیکن ۴\n` +
-    `• هر تیم ۷ trick ببرد = برنده\n\n` +
-    `🎯 *امتیاز:* ۶۰ برای برد`,
-    { parse_mode: 'Markdown', ...buildHokmKeyboard(session) }
-  );
+  const msg = await ctx.reply(buildHokmText(session), {
+    parse_mode: 'Markdown',
+    ...buildHokmKeyboard(session),
+  });
 
   session.messageId = msg.message_id;
 }
@@ -264,7 +269,7 @@ export async function handleHokmAction(ctx: Context) {
   const userId = ctx.from!.id;
 
   if (action === 'hokm_cancel') {
-    if (userId !== session.humanPlayerId) {
+    if (userId !== session.players[session.humanSeat].id) {
       await ctx.answerCbQuery('❌ فقط بازیکن اصلی می‌تواند لغو کند.');
       return;
     }
@@ -277,9 +282,22 @@ export async function handleHokmAction(ctx: Context) {
   }
 
   if (action === 'hokm_new') {
-    sessions.delete(key);
-    await ctx.answerCbQuery();
-    await handleHokm(ctx);
+    session.players.forEach((p) => {
+      p.hand = [];
+      p.tricks = 0;
+    });
+    session.trumpSuit = null;
+    session.rulerSeat = 0;
+    session.currentPlayer = 0;
+    session.currentTrick = emptyTrick();
+    session.teamScores = [0, 0];
+    session.lastWinnerSeat = null;
+    session.result = null;
+    session.busy = false;
+    session.status = 'waiting';
+
+    await ctx.answerCbQuery('🔄 بازی جدید آماده شد!');
+    await updateHokmMessage(ctx, session);
     return;
   }
 
@@ -289,256 +307,218 @@ export async function handleHokmAction(ctx: Context) {
   }
 
   if (action === 'hokm_start') {
-    if (userId !== session.humanPlayerId) {
+    if (session.status !== 'waiting') {
+      await ctx.answerCbQuery('بازی قبلاً شروع شده!');
+      return;
+    }
+    if (userId !== session.players[session.humanSeat].id) {
       await ctx.answerCbQuery('❌ فقط بازیکن اصلی می‌تواند شروع کند.');
       return;
     }
-    
+
+    const hands = dealHokmHands();
+    for (let seat = 0; seat < 4; seat++) {
+      session.players[seat].hand = hands[seat];
+      session.players[seat].tricks = 0;
+    }
+
     session.status = 'bidding';
-    dealCards(session);
-    
-    await ctx.answerCbQuery('🎮 بازی شروع شد! حکم را انتخاب کنید.');
+    session.currentTrick = emptyTrick();
+
+    await ctx.answerCbQuery('🎴 کارت‌ها پخش شد! خال حکم را انتخاب کنید.');
     await updateHokmMessage(ctx, session);
     return;
   }
 
   if (action.startsWith('hokm_trump_')) {
-    if (userId !== session.humanPlayerId) {
+    if (session.status !== 'bidding') {
+      await ctx.answerCbQuery('بازی قبلاً شروع شده!');
+      return;
+    }
+    if (userId !== session.players[session.humanSeat].id) {
       await ctx.answerCbQuery('❌ فقط شما می‌توانید حکم انتخاب کنید.');
       return;
     }
-    
+
     const suit = action.replace('hokm_trump_', '') as Suit;
     session.trumpSuit = suit;
+
+    // دارندهٔ اَس حکم، حاکم می‌شود و بازی را شروع می‌کند
+    const aceSeat = findAceHolder(session.players.map((p) => p.hand), suit);
+    session.rulerSeat = aceSeat;
+    session.currentPlayer = aceSeat;
+    session.currentTrick = emptyTrick();
     session.status = 'playing';
-    session.currentPlayer = 0;
-    session.currentTrick = Array(4).fill(null).map((_, i) => ({ playerId: i, card: null }));
-    
-    await ctx.answerCbQuery(`🎯 حکم: ${suitEmojis[suit]}`);
+
+    const ruler = session.players[aceSeat];
+    await ctx.answerCbQuery(`🎯 حکم: ${SUIT_EMOJI[suit]} — حاکم: ${ruler.name}`);
     await updateHokmMessage(ctx, session);
-    
-    // Play bot turns
-    setTimeout(() => playBotsTurns(ctx, session), 1000);
+
+    if (ruler.isBot) {
+      await playBotTurns(ctx, session);
+    }
     return;
   }
 
   if (action.startsWith('hokm_play_')) {
-    if (userId !== session.humanPlayerId) {
+    if (session.status !== 'playing') {
+      await ctx.answerCbQuery('⏳ بازی هنوز شروع نشده!');
+      return;
+    }
+
+    const humanSeat = session.humanSeat;
+    if (session.currentPlayer !== humanSeat) {
+      await ctx.answerCbQuery('⏳ نوبت شما نیست!');
+      return;
+    }
+    if (userId !== session.players[humanSeat].id) {
       await ctx.answerCbQuery('❌ نوبت شما نیست!');
       return;
     }
-    
-    const cardIdx = parseInt(action.replace('hokm_play_', ''));
-    const humanPlayer = session.players.find(p => p.id === session.humanPlayerId)!;
-    const card = humanPlayer.hand[cardIdx];
-    
-    if (!canPlayCard(card, humanPlayer.hand, session.currentTrick, session.trumpSuit)) {
-      await ctx.answerCbQuery('❌ نمی‌توانید این کارت را بازی کنید!');
+
+    const [, , suitStr, rankStr] = action.split('_');
+    const suit = suitStr as Suit;
+    const rank = parseInt(rankStr, 10);
+
+    const human = session.players[humanSeat];
+    const card = human.hand.find((c) => c.suit === suit && c.rank === rank);
+    if (!card) {
+      await ctx.answerCbQuery('❌ این کارت در دست شما نیست.');
       return;
     }
-    
-    // Play the card
-    const playerIdx = session.players.findIndex(p => p.id === session.humanPlayerId);
-    session.currentTrick[playerIdx].card = card;
-    humanPlayer.hand.splice(cardIdx, 1);
-    
-    await ctx.answerCbQuery(`🃏 ${getCardEmoji(card)} بازی شد`);
-    
-    // Check if trick is complete
-    if (session.currentTrick.every(t => t.card !== null)) {
-      await completeTrick(ctx, session);
-    } else {
-      session.currentPlayer = (session.currentPlayer + 1) % 4;
-      await updateHokmMessage(ctx, session);
-      
-      // Play bot turns
-      if (session.players[session.currentPlayer].isBot) {
-        setTimeout(() => playBotsTurns(ctx, session), 1000);
-      }
+
+    if (!canPlayCard(card, human.hand, session.currentTrick, session.trumpSuit)) {
+      const led = session.currentTrick.find((t) => t.card !== null)?.card;
+      await ctx.answerCbQuery(
+        led ? `❌ باید ${SUIT_NAME_FA[led.suit]} بازی کنید.` : '❌ این کارت قابل بازی نیست.'
+      );
+      return;
     }
+
+    human.hand = human.hand.filter((c) => !(c.suit === card.suit && c.rank === card.rank));
+    session.currentTrick[humanSeat].card = card;
+
+    await ctx.answerCbQuery(`🃏 ${cardLabel(card)} بازی شد`);
+    await continueAfterCard(ctx, session);
     return;
   }
 }
 
-async function playBotsTurns(ctx: Context, session: HokmSession) {
-  while (session.players[session.currentPlayer].isBot && session.status === 'playing') {
-    const botPlayer = session.players[session.currentPlayer];
-    const playableCards = botPlayer.hand.filter(c => 
-      canPlayCard(c, botPlayer.hand, session.currentTrick, session.trumpSuit)
-    );
-    
-    if (playableCards.length === 0) break;
-    
-    // Improved bot strategy
-    const firstCard = session.currentTrick.find(t => t.card !== null)?.card;
-    const ledSuit = firstCard?.suit;
-    const hasSuit = ledSuit && playableCards.some(c => c.suit === ledSuit);
-    
-    // Check if teammate is winning
-    const teammateIdx = (session.currentPlayer + 2) % 4;
-    const teammatePlay = session.currentTrick[teammateIdx];
-    let teammateWinning = false;
-    
-    if (teammatePlay?.card) {
-      const currentWinner = determineTrickWinner(session.currentTrick, session.trumpSuit!);
-      teammateWinning = currentWinner === teammateIdx;
-    }
-    
-    let cardToPlay: Card;
-    
-    // If teammate is winning, play low card
-    if (teammateWinning) {
-      cardToPlay = playableCards.sort((a, b) => a.rank - b.rank)[0];
-    }
-    // If we have the led suit, play highest of that suit
-    else if (hasSuit) {
-      cardToPlay = playableCards.filter(c => c.suit === ledSuit).sort((a, b) => b.rank - a.rank)[0];
-    }
-    // If we don't have the suit, try to trump with low trump
-    else if (session.trumpSuit && playableCards.some(c => c.suit === session.trumpSuit)) {
-      cardToPlay = playableCards.filter(c => c.suit === session.trumpSuit).sort((a, b) => a.rank - b.rank)[0];
-    }
-    // Otherwise play lowest card
-    else {
-      cardToPlay = playableCards.sort((a, b) => a.rank - b.rank)[0];
-    }
-    
-    const cardIdx = botPlayer.hand.findIndex(c => c.suit === cardToPlay.suit && c.rank === cardToPlay.rank);
-    session.currentTrick[session.currentPlayer].card = cardToPlay;
-    botPlayer.hand.splice(cardIdx, 1);
-    
-    session.currentPlayer = (session.currentPlayer + 1) % 4;
-    
-    await updateHokmMessage(ctx, session);
-    
-    // Wait a bit between bot plays
-    await new Promise(resolve => setTimeout(resolve, 800));
-  }
-  
-  // Check if trick is complete
-  if (session.currentTrick.every(t => t.card !== null)) {
+// ─── Game flow ───────────────────────────────
+async function continueAfterCard(ctx: Context, session: HokmSession) {
+  if (isTrickComplete(session.currentTrick)) {
     await completeTrick(ctx, session);
   } else {
+    session.currentPlayer = (session.currentPlayer + 1) % 4;
     await updateHokmMessage(ctx, session);
+  }
+
+  if (session.status === 'playing' && session.players[session.currentPlayer].isBot) {
+    await playBotTurns(ctx, session);
+  }
+}
+
+async function playBotTurns(ctx: Context, session: HokmSession) {
+  while (
+    session.status === 'playing' &&
+    !session.busy &&
+    session.players[session.currentPlayer].isBot
+  ) {
+    session.busy = true;
+    try {
+      const seat = session.currentPlayer;
+      const bot = session.players[seat];
+      const card = chooseBotCard(bot.hand, session.currentTrick, session.trumpSuit!, seat);
+
+      bot.hand = bot.hand.filter((c) => !(c.suit === card.suit && c.rank === card.rank));
+      session.currentTrick[seat].card = card;
+
+      if (isTrickComplete(session.currentTrick)) {
+        await completeTrick(ctx, session);
+      } else {
+        session.currentPlayer = (session.currentPlayer + 1) % 4;
+        await updateHokmMessage(ctx, session);
+      }
+
+      await sleep(900);
+    } finally {
+      session.busy = false;
+    }
   }
 }
 
 async function completeTrick(ctx: Context, session: HokmSession) {
-  const winnerIdx = determineTrickWinner(session.currentTrick, session.trumpSuit!);
-  session.players[winnerIdx].tricks++;
-  
-  // Update scores (team1 = players 0,2; team2 = players 1,3)
-  if (winnerIdx === 0 || winnerIdx === 2) {
-    session.scores.team1++;
-  } else {
-    session.scores.team2++;
-  }
-  
-  // Check if round is over
-  if (session.scores.team1 >= 7 || session.scores.team2 >= 7) {
+  const winnerSeat = determineTrickWinner(session.currentTrick, session.trumpSuit!);
+  const winner = session.players[winnerSeat];
+  const team = teamOf(winnerSeat);
+
+  winner.tricks++;
+  session.teamScores[team]++;
+  session.lastWinnerSeat = winnerSeat;
+
+  if (session.teamScores[team] >= TRICK_POINTS_TO_WIN) {
+    const losingTeam = team === 0 ? 1 : 0;
+    const su = winner.tricks >= TOTAL_TRICKS;
+    const kot = session.teamScores[losingTeam] === 0;
+
     session.status = 'finished';
-    const winnerTeam = session.scores.team1 >= 7 ? 1 : 2;
-    const humanWon = winnerTeam === 1;
-    
-    if (humanWon) {
-      await awardHokmWinner(ctx, session);
-    }
-    
+    session.result = { winnerTeam: team, kot, su };
+
+    await awardHokmPoints(ctx, session);
     await updateHokmMessage(ctx, session);
     return;
   }
-  
-  // Start new trick
-  session.currentTrick = Array(4).fill(null).map((_, i) => ({ playerId: i, card: null }));
-  session.currentPlayer = winnerIdx;
-  
+
+  session.currentTrick = emptyTrick();
+  session.currentPlayer = winnerSeat;
+
   await updateHokmMessage(ctx, session);
-  
-  // Continue with bot turns if needed
-  if (session.players[session.currentPlayer].isBot) {
-    setTimeout(() => playBotsTurns(ctx, session), 1000);
-  }
 }
 
-async function awardHokmWinner(ctx: Context, session: HokmSession) {
+async function awardHokmPoints(ctx: Context, session: HokmSession) {
+  if (!session.result) return;
+
+  const humanSeat = session.humanSeat;
+  const humanTeam = teamOf(humanSeat);
+  if (session.result.winnerTeam !== humanTeam) return;
+
+  const points = session.result.kot ? 120 : session.result.su ? 100 : 60;
+
   try {
     const user = await prisma.user.findFirst({
-      where: { telegramId: BigInt(session.humanPlayerId), botId: (ctx as any).botId },
+      where: { telegramId: BigInt(session.players[humanSeat].id), botId: (ctx as any).botId },
     });
-    if (user) {
-      const rewardPoints = 60;
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { points: { increment: rewardPoints } },
-      });
-      await prisma.pointTransaction.create({
-        data: {
-          userId: user.id,
-          amount: rewardPoints,
-          type: 'BONUS',
-          description: 'بازی حکم — برنده',
-        },
-      });
-    }
+    if (!user) return;
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { points: { increment: points } },
+    });
+    await prisma.pointTransaction.create({
+      data: {
+        userId: user.id,
+        amount: points,
+        type: 'BONUS',
+        description: 'بازی حکم — برنده',
+      },
+    });
   } catch {}
 }
 
 async function updateHokmMessage(ctx: Context, session: HokmSession) {
-  const humanPlayer = session.players.find(p => p.id === session.humanPlayerId)!;
-  const handStr = sortHand(humanPlayer.hand).map(c => getCardEmoji(c)).join(' ');
-  
-  let statusText: string;
-  if (session.status === 'waiting') {
-    statusText = '🎮 برای شروع، دکمه "شروع بازی" را بزنید.';
-  } else if (session.status === 'bidding') {
-    statusText = `🎯 *حکم را انتخاب کنید:*\n\nکارت‌های شما:\n${handStr}`;
-  } else if (session.status === 'playing') {
-    const trickStr = session.currentTrick.map((t, i) => {
-      if (!t.card) return '⬜';
-      return `${session.players[i].name.split(' ')[0]}: ${getCardEmoji(t.card)}`;
-    }).join('\n');
-    
-    statusText = 
-      `🃏 *حکم:* ${session.trumpSuit ? suitEmojis[session.trumpSuit] : '...'}\n` +
-      `📊 *امتیاز:* تیم ۱: ${session.scores.team1} | تیم ۲: ${session.scores.team2}\n\n` +
-      `🎴 *کارت‌های شما:*\n${handStr}\n\n` +
-      `🎯 *Trick فعلی:*\n${trickStr || '...'}\n\n` +
-      `👤 *نوبت:* ${session.players[session.currentPlayer].name}`;
-  } else if (session.status === 'finished') {
-    const winnerTeam = session.scores.team1 >= 7 ? 1 : 2;
-    const humanWon = winnerTeam === 1;
-    statusText = 
-      `🏆 *بازی تمام شد!*\n\n` +
-      `📊 *امتیاز نهایی:*\n` +
-      `تیم ۱: ${session.scores.team1}\n` +
-      `تیم ۲: ${session.scores.team2}\n\n` +
-      `${humanWon ? '🎉 *تیم شما برنده شد!*' : '😔 *تیم شما باخت!*'}\n` +
-      `${humanWon ? '🎯 ۶۰ امتیاز دریافت شد!' : ''}`;
-  } else {
-    statusText = '';
-  }
-
-  const text =
-    `🃏 *حکم*\n\n` +
-    `${statusText}`;
-
   try {
-    await ctx.editMessageText(text, {
+    await ctx.editMessageText(buildHokmText(session), {
       parse_mode: 'Markdown',
       ...buildHokmKeyboard(session),
     });
   } catch {}
 }
 
-function mentionUser(userId: number, name: string): string {
-  return `[${name}](tg://user?id=${userId})`;
-}
-
 // Cleanup expired sessions
 setInterval(() => {
   const now = Date.now();
   for (const [key, session] of sessions.entries()) {
-    if (now - session.createdAt > 1800000) {
+    if (now - session.createdAt > 3600000) {
       sessions.delete(key);
     }
   }
