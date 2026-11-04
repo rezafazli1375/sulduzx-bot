@@ -154,6 +154,12 @@ const REQUIRED_DEFAULTS: Array<{
     type: 'NUMBER',
     description: 'حداکثر حجم آهنگ (مگابایت) — هم آپلود از پنل هم آهنگی که کاربر در گروه می‌فرستد',
   },
+  {
+    key: 'music_schedule_enabled',
+    value: 'true',
+    type: 'BOOLEAN',
+    description: 'پخش خودکار موزیک در ساعت‌های تعیین‌شده (بخش موزیک پنل) فعال',
+  },
 ];
 
 /**

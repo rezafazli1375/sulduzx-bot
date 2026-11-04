@@ -24,6 +24,8 @@ model Bot {
   users     User[]
   channels  Channel[]
   groups    GroupChat[]
+  /// زمان‌بندی‌های پخش خودکار موزیک این ربات (با حذف ربات، زمان‌بندی‌هایش هم می‌روند)
+  musicSchedules MusicSchedule[]
 
   @@map("bots")
 }
@@ -428,4 +430,41 @@ enum MusicPlayStatus {
   FINISHED
   STOPPED
   FAILED
+}
+
+/// پخش خودکار موزیک در زمان تعیین‌شده.
+/// هر سطر یک «ربات + ساعت/روز + گروه‌های انتخابی» است. در زمانش، یک آهنگ
+/// تصادفی از کتابخانهٔ مشترک به‌شکل ویس (با همان کپشن همیشگی: خط اول نام آهنگ،
+/// خط دوم آیدی ربات) در همهٔ گروه‌های آن سطر فرستاده می‌شود.
+/// kind:
+///   daily    → times («HH:MM») در روزهای days (خالی = هر روز)
+///   interval → هر intervalMinutes دقیقه
+///   once     → یک بار در onceAt، بعد خودش غیرفعال می‌شود
+/// chatIds رشته‌اند چون شناسهٔ گروه تلگرام از حد امن اعداد جاوااسکریپت bigger است.
+/// nextRunAt همیشه در UTC ذخیره می‌شود و از روی timezone محاسبه می‌گردد.
+model MusicSchedule {
+  id              Int       @id @default(autoincrement())
+  name            String?
+  botId           Int       @map("bot_id")
+  chatIds         String[]  @default([]) @map("chat_ids")
+  kind            String    @default("daily")
+  times           String[]  @default([])
+  days            Int[]     @default([])
+  intervalMinutes Int?      @map("interval_minutes")
+  onceAt          DateTime? @map("once_at")
+  timezone        String    @default("Asia/Tehran")
+  isActive        Boolean   @default(true) @map("is_active")
+  lastRunAt       DateTime? @map("last_run_at")
+  nextRunAt       DateTime? @map("next_run_at")
+  /// خلاصهٔ فارسی آخرین اجرا (چند گروه ارسال شد / چرا نشد) تا در پنل دیده شود
+  lastResult      String?   @map("last_result")
+  runCount        Int       @default(0) @map("run_count")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@index([isActive, nextRunAt])
+  @@index([botId])
+  @@map("music_schedules")
 }

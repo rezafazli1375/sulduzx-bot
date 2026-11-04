@@ -13,10 +13,80 @@ import {
   PauseCircle,
   Music2,
   Headphones,
+  AlarmClock,
+  Plus,
+  Pencil,
 } from 'lucide-react';
 import { formatDateTime } from '../lib/features';
 
 const MAX_UPLOAD_MB = 20;
+
+/** منطقهٔ زمانیِ ساعت‌هایی که مدیر وارد می‌کند (با سرور یکی نیست) */
+const SCHEDULE_TZ = 'Asia/Tehran';
+
+/** هفتهٔ ایرانی از شنبه؛ عدد = همان Date.getDay() (۰=یکشنبه … ۶=شنبه) */
+const WEEKDAYS: { value: number; label: string }[] = [
+  { value: 6, label: 'شنبه' },
+  { value: 0, label: 'یکشنبه' },
+  { value: 1, label: 'دوشنبه' },
+  { value: 2, label: 'سه‌شنبه' },
+  { value: 3, label: 'چهارشنبه' },
+  { value: 4, label: 'پنج‌شنبه' },
+  { value: 5, label: 'جمعه' },
+];
+
+const KIND_LABELS: Record<string, string> = {
+  daily: 'روزهای هفته و ساعت',
+  interval: 'هر چند دقیقه یک‌بار',
+  once: 'فقط یک بار',
+};
+
+interface ScheduleForm {
+  id: number | null;
+  name: string;
+  botId: string;
+  kind: 'daily' | 'interval' | 'once';
+  times: string[];
+  days: number[];
+  intervalMinutes: string;
+  onceAt: string;
+  chatIds: string[];
+  isActive: boolean;
+}
+
+const EMPTY_FORM: ScheduleForm = {
+  id: null,
+  name: '',
+  botId: '',
+  kind: 'daily',
+  times: [],
+  days: [],
+  intervalMinutes: '180',
+  onceAt: '',
+  chatIds: [],
+  isActive: true,
+};
+
+/** «HH:MM» به وقت تهران برای input نوع datetime-local */
+function toWallClockInput(value?: string | Date | null): string {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  try {
+    const parts = new Intl.DateTimeFormat('sv-SE', {
+      timeZone: SCHEDULE_TZ,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(date);
+    return parts.replace(' ', 'T').slice(0, 16);
+  } catch {
+    return '';
+  }
+}
 
 function formatDuration(seconds?: number | null): string {
   if (!seconds || seconds <= 0) return '—';
@@ -51,18 +121,29 @@ export default function Music() {
   const [file, setFile] = useState<File | null>(null);
   const [playTrackId, setPlayTrackId] = useState('');
   const [playChatId, setPlayChatId] = useState('');
+  const [bots, setBots] = useState<any[]>([]);
+  const [schedules, setSchedules] = useState<any[]>([]);
+  const [form, setForm] = useState<ScheduleForm>(EMPTY_FORM);
+  const [timeInput, setTimeInput] = useState('');
+  const [savingSchedule, setSavingSchedule] = useState(false);
+  const [runningId, setRunningId] = useState<number | null>(null);
+  const [preview, setPreview] = useState<any>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [listRes, statsRes, groupsRes] = await Promise.all([
+      const [listRes, statsRes, groupsRes, botsRes, schedulesRes] = await Promise.all([
         axios.get('/api/music'),
         axios.get('/api/music/stats'),
         axios.get('/api/music/groups'),
+        axios.get('/api/bots'),
+        axios.get('/api/music/schedules'),
       ]);
       setTracks(listRes.data.tracks ?? []);
       setStats(statsRes.data);
       setGroups(groupsRes.data.groups ?? []);
+      setBots((botsRes.data ?? []).filter((bot: any) => bot.isActive));
+      setSchedules(schedulesRes.data.schedules ?? []);
       setError('');
     } catch (err: any) {
       console.error('Load music error:', err);
@@ -163,6 +244,171 @@ export default function Music() {
       setError(err.response?.data?.error || 'پخش آهنگ در گروه ناموفق بود');
     } finally {
       setPlaying(false);
+    }
+  };
+
+  // ─── پخش خودکار (زمان‌بندی) ────────────────
+  const patchForm = (changes: Partial<ScheduleForm>) => setForm((prev) => ({ ...prev, ...changes }));
+
+  /** گروه‌هایی که برای ربات انتخاب‌شده ثبت شده‌اند */
+  const formGroups = form.botId
+    ? groups.filter((group) => String(group.botId) === String(form.botId))
+    : [];
+
+  const addTime = () => {
+    const clock = timeInput.trim();
+    if (!/^\d{2}:\d{2}$/.test(clock)) {
+      setError('ساعت را به شکل HH:MM انتخاب کنید');
+      return;
+    }
+    if (form.times.includes(clock)) {
+      setTimeInput('');
+      return;
+    }
+    if (form.times.length >= 8) {
+      setError('حداکثر ۸ ساعت برای هر زمان‌بندی');
+      return;
+    }
+    patchForm({ times: [...form.times, clock].sort() });
+    setTimeInput('');
+    setPreview(null);
+  };
+
+  const toggleDay = (day: number) => {
+    const days = form.days.includes(day) ? form.days.filter((item) => item !== day) : [...form.days, day];
+    patchForm({ days: days.sort() });
+    setPreview(null);
+  };
+
+  const toggleGroup = (chatId: string) => {
+    const chatIds = form.chatIds.includes(chatId)
+      ? form.chatIds.filter((item) => item !== chatId)
+      : [...form.chatIds, chatId];
+    patchForm({ chatIds });
+  };
+
+  const schedulePayload = () => ({
+    name: form.name.trim(),
+    botId: Number(form.botId),
+    chatIds: form.chatIds,
+    kind: form.kind,
+    times: form.kind === 'daily' ? form.times : [],
+    days: form.kind === 'daily' ? form.days : [],
+    intervalMinutes: form.kind === 'interval' ? Number(form.intervalMinutes) : undefined,
+    onceAt: form.kind === 'once' ? form.onceAt : undefined,
+    timezone: SCHEDULE_TZ,
+    isActive: form.isActive,
+  });
+
+  const previewSchedule = async () => {
+    setError('');
+    if (form.kind === 'daily' && form.times.length === 0) {
+      setError('اول یک ساعت اضافه کنید');
+      return;
+    }
+    if (form.kind === 'once' && !form.onceAt) {
+      setError('تاریخ و ساعت را وارد کنید');
+      return;
+    }
+    try {
+      const res = await axios.post('/api/music/schedules/preview', schedulePayload());
+      setPreview(res.data);
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'پیش‌نمایش ساعت بعدی ناموفق بود');
+    }
+  };
+
+  const saveSchedule = async () => {
+    setError('');
+    if (!form.botId) {
+      setError('ربات را انتخاب کنید');
+      return;
+    }
+    if (form.chatIds.length === 0) {
+      setError('حداقل یک گروه را تیک بزنید');
+      return;
+    }
+    if (form.kind === 'daily' && form.times.length === 0) {
+      setError('حداقل یک ساعت اضافه کنید');
+      return;
+    }
+    if (form.kind === 'once' && !form.onceAt) {
+      setError('تاریخ و ساعت ارسال را وارد کنید');
+      return;
+    }
+
+    setSavingSchedule(true);
+    try {
+      if (form.id) {
+        await axios.patch(`/api/music/schedules/${form.id}`, schedulePayload());
+        flash(`✅ زمان‌بندی «${form.name.trim() || 'بدون نام'}» به‌روز شد`);
+      } else {
+        await axios.post('/api/music/schedules', schedulePayload());
+        flash(`✅ زمان‌بندی «${form.name.trim() || 'بدون نام'}» ساخته شد`);
+      }
+      setForm(EMPTY_FORM);
+      setPreview(null);
+      await load();
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'ذخیرهٔ زمان‌بندی ناموفق بود');
+    } finally {
+      setSavingSchedule(false);
+    }
+  };
+
+  const editSchedule = (row: any) => {
+    setForm({
+      id: row.id,
+      name: row.name || '',
+      botId: String(row.botId),
+      kind: row.kind,
+      times: row.times ?? [],
+      days: row.days ?? [],
+      intervalMinutes: String(row.intervalMinutes ?? 180),
+      onceAt: toWallClockInput(row.onceAt),
+      chatIds: row.chatIds ?? [],
+      isActive: !!row.isActive,
+    });
+    setPreview(null);
+    document.getElementById('music-schedule-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+
+  const removeSchedule = async (row: any) => {
+    if (!window.confirm(`زمان‌بندی «${row.name || row.label}» حذف شود؟`)) return;
+    try {
+      await axios.delete(`/api/music/schedules/${row.id}`);
+      if (form.id === row.id) setForm(EMPTY_FORM);
+      flash('🗑 زمان‌بندی حذف شد');
+      await load();
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'حذف زمان‌بندی ناموفق بود');
+    }
+  };
+
+  const toggleScheduleActive = async (row: any) => {
+    try {
+      await axios.patch(`/api/music/schedules/${row.id}`, { isActive: !row.isActive });
+      flash(row.isActive ? '⏸ زمان‌بندی خاموش شد' : '▶️ زمان‌بندی روشن شد');
+      await load();
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'تغییر وضعیت زمان‌بندی ناموفق بود');
+    }
+  };
+
+  /** همین حالا یک آهنگ تصادفی در گروه‌های این زمان‌بندی فرستاده می‌شود */
+  const runSchedule = async (row: any) => {
+    setError('');
+    setRunningId(row.id);
+    try {
+      const res = await axios.post(`/api/music/schedules/${row.id}/run`);
+      const summary = res.data?.report?.summary || '';
+      if (res.data?.success) flash(`✅ ${summary}`);
+      else setError(`❌ ${summary || 'ارسال ناموفق بود'}`);
+      await load();
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'اجرای زمان‌بندی ناموفق بود');
+    } finally {
+      setRunningId(null);
     }
   };
 
@@ -422,6 +668,419 @@ export default function Music() {
         )}
       </div>
 
+      {/* زمان‌بندی پخش خودکار — فرم */}
+      <div className="card" id="music-schedule-card">
+        <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2 mb-2">
+          <AlarmClock size={20} className="text-fuchsia-500" />
+          پخش خودکار در ساعت تعیین‌شده
+        </h2>
+        <p className="text-xs text-gray-500 mb-4 leading-6">
+          برای هر ربات یک برنامه بگذارید: در هر زمان مقرر، <b>یک آهنگ تصادفی</b> از کتابخانهٔ مشترک
+          به‌شکل <b>ویس</b> — با همان کپشن همیشگی (خط اول نام آهنگ، خط دوم آیدی ربات) — در گروه‌هایی
+          که تیک زده‌اید فرستاده می‌شود. ساعت‌ها <b>به وقت تهران</b> است و پیام متنی یا دکمه‌ای اضافه
+          نمی‌شود.
+        </p>
+
+        {form.id !== null && (
+          <div className="mb-4 flex items-center justify-between rounded-lg bg-fuchsia-50 border border-fuchsia-200 px-3 py-2">
+            <p className="text-sm text-fuchsia-800">
+              در حال ویرایش زمان‌بندی «{form.name || 'بدون نام'}»
+            </p>
+            <button
+              onClick={() => {
+                setForm(EMPTY_FORM);
+                setPreview(null);
+              }}
+              className="btn-secondary text-xs py-1"
+            >
+              انصراف از ویرایش
+            </button>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">نام زمان‌بندی (اختیاری)</label>
+            <input
+              value={form.name}
+              onChange={(e) => patchForm({ name: e.target.value })}
+              className="input-field"
+              placeholder="مثلاً: آهنگ شب بخیر"
+              dir="rtl"
+              maxLength={64}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">ربات</label>
+            <select
+              value={form.botId}
+              onChange={(e) => {
+                patchForm({ botId: e.target.value, chatIds: [] });
+                setPreview(null);
+              }}
+              className="input-field"
+            >
+              <option value="">انتخاب ربات…</option>
+              {bots.map((bot) => (
+                <option key={bot.id} value={bot.id}>
+                  {bot.name}
+                  {bot.username ? ` (@${bot.username})` : ''}
+                </option>
+              ))}
+            </select>
+            {bots.length === 0 && (
+              <p className="text-[11px] text-amber-700 mt-1">ربات فعالی ثبت نشده است.</p>
+            )}
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">نوع زمان‌بندی</label>
+            <select
+              value={form.kind}
+              onChange={(e) => {
+                patchForm({ kind: e.target.value as ScheduleForm['kind'] });
+                setPreview(null);
+              }}
+              className="input-field"
+            >
+              {Object.entries(KIND_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-end pb-2">
+            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.isActive}
+                onChange={() => patchForm({ isActive: !form.isActive })}
+                className="w-4 h-4 text-fuchsia-600 rounded border-gray-300 focus:ring-fuchsia-500"
+              />
+              روشن باشد
+            </label>
+          </div>
+        </div>
+
+        {form.kind === 'daily' && (
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">ساعت‌ها (HH:MM به وقت تهران)</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="time"
+                  value={timeInput}
+                  onChange={(e) => setTimeInput(e.target.value)}
+                  className="input-field"
+                  dir="ltr"
+                />
+                <button onClick={addTime} className="btn-secondary flex items-center gap-1 whitespace-nowrap">
+                  <Plus size={16} />
+                  افزودن ساعت
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2 mt-3">
+                {form.times.length === 0 ? (
+                  <p className="text-xs text-gray-500">هنوز ساعتی اضافه نشده است.</p>
+                ) : (
+                  form.times.map((clock) => (
+                    <button
+                      key={clock}
+                      onClick={() => patchForm({ times: form.times.filter((item) => item !== clock) })}
+                      className="flex items-center gap-1 rounded-lg bg-fuchsia-50 border border-fuchsia-200 px-2.5 py-1 text-sm text-fuchsia-800"
+                      title="حذف این ساعت"
+                      dir="ltr"
+                    >
+                      {clock}
+                      <X size={14} />
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                روزها (اگر هیچ‌کدام تیک نباشد: هر روز)
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {WEEKDAYS.map((day) => {
+                  const checked = form.days.includes(day.value);
+                  return (
+                    <button
+                      key={day.value}
+                      onClick={() => toggleDay(day.value)}
+                      className={`rounded-lg border px-3 py-1.5 text-sm transition ${
+                        checked
+                          ? 'bg-fuchsia-600 border-fuchsia-600 text-white'
+                          : 'bg-white border-gray-200 text-gray-700 hover:border-fuchsia-300'
+                      }`}
+                    >
+                      {day.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                {form.days.length === 0
+                  ? 'هر روز ارسال می‌شود.'
+                  : `فقط در: ${WEEKDAYS.filter((day) => form.days.includes(day.value))
+                      .map((day) => day.label)
+                      .join('، ')}`}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {form.kind === 'interval' && (
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              هر چند دقیقه یک‌بار (حداقل ۵ دقیقه)
+            </label>
+            <input
+              type="number"
+              min={5}
+              max={10080}
+              value={form.intervalMinutes}
+              onChange={(e) => {
+                patchForm({ intervalMinutes: e.target.value });
+                setPreview(null);
+              }}
+              className="input-field w-40"
+              dir="ltr"
+            />
+            <p className="text-xs text-gray-500 mt-2">
+              شمارش از لحظهٔ ذخیره و از هر اجرای بعدی شروع می‌شود.
+            </p>
+          </div>
+        )}
+
+        {form.kind === 'once' && (
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              تاریخ و ساعت ارسال (به وقت تهران)
+            </label>
+            <input
+              type="datetime-local"
+              value={form.onceAt}
+              onChange={(e) => {
+                patchForm({ onceAt: e.target.value });
+                setPreview(null);
+              }}
+              className="input-field w-64"
+              dir="ltr"
+            />
+            <p className="text-xs text-gray-500 mt-2">بعد از ارسال، خودِ زمان‌بندی خاموش می‌شود.</p>
+          </div>
+        )}
+
+        {/* گروه‌های این ربات */}
+        <div className="mt-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <label className="block text-sm font-medium text-gray-700">
+              گروه‌هایی که آهنگ را می‌گیرند ({form.chatIds.length} از {formGroups.length})
+            </label>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => patchForm({ chatIds: formGroups.map((group) => String(group.chatId)) })}
+                className="btn-secondary text-xs py-1"
+                disabled={formGroups.length === 0}
+              >
+                انتخاب همه
+              </button>
+              <button
+                onClick={() => patchForm({ chatIds: [] })}
+                className="btn-secondary text-xs py-1"
+                disabled={form.chatIds.length === 0}
+              >
+                برداشتن انتخاب‌ها
+              </button>
+            </div>
+          </div>
+          {formGroups.length === 0 ? (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
+              {form.botId
+                ? 'این ربات هنوز گروهی در فهرست ندارد. ربات را به گروه اضافه کنید و در گروه پیامی بفرستید تا آن گروه اینجا بیاید.'
+                : 'اول ربات را انتخاب کنید.'}
+            </div>
+          ) : (
+            <div className="max-h-64 overflow-y-auto divide-y divide-gray-100 border border-gray-100 rounded-lg">
+              {formGroups.map((group) => {
+                const chatId = String(group.chatId);
+                const checked = form.chatIds.includes(chatId);
+                return (
+                  <label
+                    key={chatId}
+                    className={`flex items-center gap-3 px-3 py-2.5 cursor-pointer transition ${
+                      checked ? 'bg-fuchsia-50' : 'hover:bg-gray-50'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleGroup(chatId)}
+                      className="w-4 h-4 text-fuchsia-600 rounded border-gray-300 focus:ring-fuchsia-500 flex-shrink-0"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-sm text-gray-900 truncate">{group.title || 'گروه بدون نام'}</p>
+                      <p className="text-xs text-gray-500 truncate" dir="ltr">
+                        {group.username ? `@${group.username} · ` : ''}
+                        {group.memberCount ? `${group.memberCount} عضو · ` : ''}
+                        {chatId}
+                      </p>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <button
+            onClick={saveSchedule}
+            disabled={savingSchedule}
+            className="btn-primary flex items-center gap-2 disabled:opacity-50"
+          >
+            {savingSchedule ? (
+              <>
+                <Loader2 size={18} className="animate-spin" />
+                در حال ذخیره...
+              </>
+            ) : (
+              <>
+                <AlarmClock size={18} />
+                {form.id ? 'به‌روزرسانی زمان‌بندی' : 'ساخت زمان‌بندی'}
+              </>
+            )}
+          </button>
+          <button onClick={previewSchedule} className="btn-secondary flex items-center gap-2">
+            <RefreshCw size={16} />
+            پیش‌نمایش سه اجرای بعدی
+          </button>
+          {preview && (
+            <div className="text-sm text-gray-700">
+              {preview.ok ? (
+                <span>
+                  <b>{preview.label}</b> — {preview.upcoming.map((item: any) => item.label).join(' · ')}
+                </span>
+              ) : (
+                <span className="text-red-600">{preview.error}</span>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* زمان‌بندی‌های ثبت‌شده */}
+      <div className="card">
+        <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2 mb-4">
+          <AlarmClock size={20} className="text-fuchsia-500" />
+          زمان‌بندی‌های پخش خودکار
+          <span className="text-sm font-normal text-gray-500">({schedules.length} زمان‌بندی)</span>
+        </h2>
+        {schedules.length === 0 ? (
+          <p className="text-sm text-gray-500">
+            هنوز زمان‌بندی‌ای نساخته‌اید. از فرم بالا ربات، ساعت و گروه‌ها را انتخاب کنید.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-gray-500">
+                <tr>
+                  <th className="text-right font-medium py-2">زمان‌بندی</th>
+                  <th className="text-right font-medium py-2">ربات</th>
+                  <th className="text-right font-medium py-2">گروه‌ها</th>
+                  <th className="text-right font-medium py-2">اجرای بعدی</th>
+                  <th className="text-right font-medium py-2">آخرین اجرا</th>
+                  <th className="text-right font-medium py-2">وضعیت</th>
+                  <th className="text-right font-medium py-2">عملیات</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {schedules.map((row) => (
+                  <tr key={row.id} className={row.isActive ? '' : 'opacity-60'}>
+                    <td className="py-2.5">
+                      <p className="font-bold text-gray-900">{row.name || 'بدون نام'}</p>
+                      <p className="text-xs text-gray-500">{row.label}</p>
+                      <p className="text-[11px] text-gray-400" dir="ltr">
+                        #{row.id} · {row.runCount} اجرا
+                      </p>
+                    </td>
+                    <td className="py-2.5 text-gray-700">{row.botName || `#${row.botId}`}</td>
+                    <td className="py-2.5 text-gray-700">
+                      <p>{row.groups.length} گروه</p>
+                      <p className="text-xs text-gray-500 truncate max-w-[220px]">
+                        {row.groups.map((group: any) => group.title).join('، ')}
+                      </p>
+                    </td>
+                    <td className="py-2.5 text-gray-700">
+                      {row.isActive ? row.nextRunLabel || '—' : 'خاموش'}
+                    </td>
+                    <td className="py-2.5">
+                      <p className="text-gray-700">{row.lastRunLabel || '—'}</p>
+                      {row.lastResult && (
+                        <p className="text-[11px] text-gray-500 max-w-[260px] leading-5">{row.lastResult}</p>
+                      )}
+                    </td>
+                    <td className="py-2.5">
+                      {row.isActive ? (
+                        <span className="text-xs text-green-700 bg-green-50 border border-green-200 rounded px-2 py-0.5">
+                          فعال
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-600 bg-gray-100 border border-gray-200 rounded px-2 py-0.5">
+                          غیرفعال
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2.5">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => runSchedule(row)}
+                          disabled={runningId === row.id}
+                          className="btn-secondary text-xs py-1 px-2 flex items-center gap-1 disabled:opacity-50"
+                          title="همین حالا یک آهنگ تصادفی در این گروه‌ها بفرست (ساعت بعدی عوض نمی‌شود)"
+                        >
+                          {runningId === row.id ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <PlayCircle size={14} />
+                          )}
+                          امتحان
+                        </button>
+                        <button
+                          onClick={() => editSchedule(row)}
+                          className="btn-secondary text-xs py-1 px-2 flex items-center gap-1"
+                          title="ویرایش"
+                        >
+                          <Pencil size={14} />
+                          ویرایش
+                        </button>
+                        <button
+                          onClick={() => toggleScheduleActive(row)}
+                          className="btn-secondary text-xs py-1 px-2 flex items-center gap-1"
+                          title={row.isActive ? 'خاموش کردن موقت' : 'روشن کردن'}
+                        >
+                          {row.isActive ? <PauseCircle size={14} /> : <PlayCircle size={14} />}
+                          {row.isActive ? 'خاموش' : 'روشن'}
+                        </button>
+                        <button
+                          onClick={() => removeSchedule(row)}
+                          className="text-red-500 hover:text-red-700 p-1.5 rounded-lg hover:bg-red-50"
+                          title="حذف زمان‌بندی"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       {/* فهرست آهنگ‌ها */}
       <div className="card">
         <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2 mb-4">
@@ -529,6 +1188,8 @@ export default function Music() {
           <li>هر کاربری می‌تواند آهنگی را در گروه بفرستد و در کپشن بنویسد «پخش»؛ ربات آن را در کتابخانهٔ مشترک حفظ و همان لحظه پخش می‌کند.</li>
           <li>کتابخانه بین همهٔ ربات‌ها مشترک است؛ هر آهنگی که یک ربات بگیرد، بقیهٔ ربات‌ها هم می‌توانند پخشش کنند.</li>
           <li>آهنگ‌های غیرفعال در انتخاب تصادفی نمی‌آیند.</li>
+          <li>در «پخش خودکار در ساعت تعیین‌شده» می‌توانید بگذارید ربات هر روز (یا هر چند دقیقه، یا یک بار) در ساعت مقرر، یک آهنگ تصادفی را در گروه‌های انتخابی به‌شکل ویس بفرستد.</li>
+          <li>اگر ربات در ساعت مقرر فعال نباشد یا دسترسی موزیکش بسته شده باشد، در همان زمان چیزی ارسال نمی‌شود و دلیلش در ستون «آخرین اجرا» همان زمان‌بندی نوشته می‌شود.</li>
           <li>حداکثر حجم {MAX_UPLOAD_MB} مگابایت است (تنظیم <b dir="ltr">music_max_mb</b> در بخش تنظیمات).</li>
           <li>پخش برای ربات‌هایی که در بخش «ربات‌ها» تیک موزیک ندارند، خاموش است.</li>
         </ul>
