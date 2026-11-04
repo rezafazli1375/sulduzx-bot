@@ -10,6 +10,9 @@ import {
   Activity,
   Bot,
   KeyRound,
+  UsersRound,
+  Music,
+  PlayCircle,
 } from 'lucide-react';
 import { formatDateTime } from '../lib/features';
 
@@ -71,6 +74,9 @@ export default function Dashboard() {
     { label: 'کاربران کانفیگ‌گرفته', value: stats.configUsers ?? 0, icon: KeyRound, color: 'from-teal-500 to-emerald-600', bg: 'bg-teal-50', text: 'text-teal-600' },
     { label: 'کانفیگ‌های صادرشده', value: stats.totalConfigClaims ?? 0, icon: KeyRound, color: 'from-indigo-500 to-purple-600', bg: 'bg-indigo-50', text: 'text-indigo-600' },
     { label: 'پروکسی‌ها', value: stats.totalProxies, icon: Shield, color: 'from-pink-500 to-rose-600', bg: 'bg-pink-50', text: 'text-pink-600' },
+    { label: 'گروه‌های عضو ربات', value: stats.totalGroups ?? 0, icon: UsersRound, color: 'from-sky-500 to-blue-600', bg: 'bg-sky-50', text: 'text-sky-600' },
+    { label: 'آهنگ‌های پخش‌شده', value: stats.musicPlayed ?? 0, icon: Music, color: 'from-fuchsia-500 to-purple-600', bg: 'bg-fuchsia-50', text: 'text-fuchsia-600' },
+    { label: 'در حال پخش', value: stats.musicNowPlaying ?? 0, icon: PlayCircle, color: 'from-red-500 to-rose-600', bg: 'bg-red-50', text: 'text-red-600' },
   ];
 
   return (

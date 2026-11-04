@@ -15,6 +15,7 @@ export const FEATURE_KEYS = [
   'video_to_mp3',
   'server_status',
   'support',
+  'music',
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
@@ -31,6 +32,7 @@ export const FEATURE_LABELS: Record<FeatureKey, string> = {
   video_to_mp3: 'ویدیو به MP3',
   server_status: 'وضعیت سرور',
   support: 'پشتیبانی',
+  music: 'پخش موزیک در گروه',
 };
 
 export const BLOCKED_NOTICE = '⛔️ دسترسی شما به این بخش توسط مدیریت محدود شده است.';
@@ -61,6 +63,7 @@ const CALLBACK_FEATURES: Record<string, FeatureKey> = {
   video_to_mp3: 'video_to_mp3',
   server_status: 'server_status',
   support: 'support',
+  music: 'music',
 };
 
 const COMMAND_FEATURES: Record<string, FeatureKey> = {
@@ -73,6 +76,10 @@ const COMMAND_FEATURES: Record<string, FeatureKey> = {
   '/voice': 'voice_convert',
   '/status': 'server_status',
   '/support': 'support',
+  '/music': 'music',
+  '/play': 'music',
+  '/next': 'music',
+  '/stop': 'music',
 };
 
 const WORD_DOC_PATTERN = /\.(docx?|odt|rtf)$/i;
@@ -98,13 +105,16 @@ export function featureKeyForCtx(ctx: Context): FeatureKey | undefined {
     return undefined;
   }
 
-  if (msg.voice || msg.audio) return 'voice_convert';
+  // ویس/آهنگ در پیوی = تبدیل ویس؛ در گروه = درخواست پخش موزیک
+  const inGroup = ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup';
+  if (msg.audio) return inGroup ? 'music' : 'voice_convert';
+  if (msg.voice) return 'voice_convert';
   if (msg.video) return 'video_to_mp3';
 
   if (msg.document) {
     const name: string = msg.document.file_name || '';
     const mime: string = msg.document.mime_type || '';
-    if (mime === 'audio/mpeg' || /\.mp3$/i.test(name)) return 'voice_convert';
+    if (mime === 'audio/mpeg' || /\.mp3$/i.test(name)) return inGroup ? 'music' : 'voice_convert';
     if (WORD_DOC_PATTERN.test(name)) return 'word_to_pdf';
     if (VIDEO_DOC_PATTERN.test(name) || mime.startsWith('video/')) return 'video_to_mp3';
   }

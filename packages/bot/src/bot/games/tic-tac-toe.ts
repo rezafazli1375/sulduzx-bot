@@ -1,6 +1,13 @@
 import { Context, Markup } from 'telegraf';
 import { prisma } from '../../lib/prisma.js';
-import { requireGroup, checkGameChannelJoin } from './utils.js';
+import {
+  GAME_CANCEL_PURGE_DELAY_MS,
+  GAME_RESULT_PURGE_DELAY_MS,
+  checkGameChannelJoin,
+  purgeGameMessages,
+  requireGroup,
+  sendGameMessage,
+} from './utils.js';
 import {
   TttBoard,
   TttMode,
@@ -172,12 +179,11 @@ export async function handleTicTacToe(ctx: Context) {
   };
   sessions.set(key, session);
 
-  const msg = await ctx.reply(buildGameText(session), {
+  const messageId = await sendGameMessage(ctx, key, buildGameText(session), {
     parse_mode: 'Markdown',
     ...buildGameKeyboard(session),
   });
-
-  session.messageId = msg.message_id;
+  if (typeof messageId === 'number') session.messageId = messageId;
 }
 
 // ─── Action Handler ──────────────────────────
@@ -203,6 +209,7 @@ export async function handleTicTacToeAction(ctx: Context) {
       session.playerO = null;
       session.winLine = [];
       session.board = createTttBoard(session.mode.rows, session.mode.cols);
+      await reopenTttBoard(ctx, key, session);
       await ctx.answerCbQuery('🎲 حالت بازی را انتخاب کنید.');
       await updateGameMessage(ctx, session);
       return;
@@ -309,6 +316,7 @@ export async function handleTicTacToeAction(ctx: Context) {
       return;
     }
     sessions.delete(key);
+    void purgeGameMessages(ctx.telegram, key, GAME_CANCEL_PURGE_DELAY_MS);
     await ctx.answerCbQuery('بازی لغو شد.');
     try {
       await ctx.editMessageText('❌ بازی دوز لغو شد.');
@@ -325,6 +333,7 @@ export async function handleTicTacToeAction(ctx: Context) {
     session.winnerId = null;
     session.winLine = [];
     session.board = createTttBoard(session.mode.rows, session.mode.cols);
+    await reopenTttBoard(ctx, key, session);
 
     await ctx.answerCbQuery('🔄 بازی جدید آماده شد — منتظر بازیکن!');
     await updateGameMessage(ctx, session);
@@ -390,6 +399,8 @@ export async function handleTicTacToeAction(ctx: Context) {
       }
 
       await awardTttPoints(ctx, session);
+      // نتیجه مدت کوتاهی روی صفحه می‌ماند، بعد پیام بازی از گروه پاک می‌شود
+      void purgeGameMessages(ctx.telegram, key, GAME_RESULT_PURGE_DELAY_MS);
       await ctx.answerCbQuery(win ? '🏆 بازی تمام شد!' : '🤝 مساوی!');
       await updateGameMessage(ctx, session);
       return;
@@ -437,8 +448,31 @@ async function awardTttPoints(ctx: Context, session: TttSession) {
   }
 }
 
+/**
+ * تختهٔ بازی قبلی یا پاک شده یا در نوبت پاک شدن است؛ برای «دوز» تازه یک پیام
+ * تازه در گروه می‌فرستد و همان پیام را به عنوان تختهٔ فعلی ثبت می‌کند.
+ */
+async function reopenTttBoard(ctx: Context, key: string, session: TttSession): Promise<void> {
+  session.createdAt = Date.now();
+  const messageId = await sendGameMessage(ctx, key, buildGameText(session), {
+    parse_mode: 'Markdown',
+    ...buildGameKeyboard(session),
+  });
+  if (typeof messageId === 'number') session.messageId = messageId;
+}
+
 async function updateGameMessage(ctx: Context, session: TttSession) {
   try {
+    if (session.messageId > 0) {
+      await ctx.telegram.editMessageText(
+        String(session.chatId),
+        session.messageId,
+        undefined,
+        buildGameText(session),
+        { parse_mode: 'Markdown', ...buildGameKeyboard(session) }
+      );
+      return;
+    }
     await ctx.editMessageText(buildGameText(session), {
       parse_mode: 'Markdown',
       ...buildGameKeyboard(session),

@@ -1,7 +1,14 @@
 import { Context, Markup } from 'telegraf';
 import { prisma } from '../../lib/prisma.js';
 import { getSetting, getSettingNumber } from '../../lib/settings.js';
-import { requireGroup, checkGameChannelJoin } from './utils.js';
+import {
+  GAME_CANCEL_PURGE_DELAY_MS,
+  GAME_RESULT_PURGE_DELAY_MS,
+  checkGameChannelJoin,
+  purgeGameMessages,
+  requireGroup,
+  sendGameMessage,
+} from './utils.js';
 import {
   LetterStatus,
   LETTER_ROWS,
@@ -583,11 +590,11 @@ export async function handleWordle(ctx: Context) {
   session.ctx = ctx;
   sessions.set(key, session);
 
-  const msg = await ctx.reply(buildText(session), {
+  const messageId = await sendGameMessage(ctx, key, buildText(session), {
     parse_mode: 'Markdown',
     ...buildKeyboard(session),
   });
-  session.messageId = msg.message_id;
+  if (typeof messageId === 'number') session.messageId = messageId;
 }
 
 // ─── Action Handler ──────────────────────────
@@ -620,6 +627,7 @@ export async function handleWordleAction(ctx: Context) {
       return;
     }
     sessions.delete(key);
+    void purgeGameMessages(ctx.telegram, key, GAME_CANCEL_PURGE_DELAY_MS);
     await ctx.answerCbQuery('بازی لغو شد.');
     try {
       await ctx.editMessageText('❌ بازی کلمه‌یاب لغو شد.');
@@ -630,10 +638,16 @@ export async function handleWordleAction(ctx: Context) {
   // ── بازی جدید ──
   if (action === 'wordle_new') {
     const fresh = createSession(chatId);
-    fresh.messageId = session.messageId;
+    fresh.messageId = 0;
     fresh.length = session.length;
     fresh.ctx = ctx;
     sessions.set(key, fresh);
+    // تختهٔ قبلی پاک شده یا در نوبت پاک شدن است؛ برای دور تازه پیام تازه بفرست
+    const reopened = await sendGameMessage(ctx, key, buildText(fresh), {
+      parse_mode: 'Markdown',
+      ...buildKeyboard(fresh),
+    });
+    if (typeof reopened === 'number') fresh.messageId = reopened;
     await ctx.answerCbQuery('🔄 حالت بازی را انتخاب کنید.');
     await refresh(fresh);
     return;
@@ -702,6 +716,7 @@ export async function handleWordleAction(ctx: Context) {
 
     if (result.won) {
       await awardPoints(ctx, session);
+      void purgeGameMessages(ctx.telegram, key, GAME_RESULT_PURGE_DELAY_MS);
       await ctx.answerCbQuery('🎉 آفرین! برنده شدی!');
       await refresh(session);
       return;
@@ -838,6 +853,7 @@ export async function handleWordleText(ctx: Context, text: string): Promise<bool
 
   if (result.won) {
     await awardPoints(ctx, session);
+    void purgeGameMessages(ctx.telegram, sessionKey(chatId), GAME_RESULT_PURGE_DELAY_MS);
   }
 
   await refresh(session);

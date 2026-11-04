@@ -19,6 +19,8 @@ model Bot {
 
   users     User[]
   channels  Channel[]
+  groups    GroupChat[]
+  musicTracks MusicTrack[]
 
   @@map("bots")
 }
@@ -333,6 +335,8 @@ enum GameType {
   MINESWEEPER
   WORDLE
   HOKM
+  MENCH
+  SCALA
 }
 
 enum GameStatus {
@@ -340,4 +344,92 @@ enum GameStatus {
   ACTIVE
   FINISHED
   CANCELLED
+}
+
+// ──────────────────────────────────────────────
+// Groups (chat membership of the bot) & Music
+// ──────────────────────────────────────────────
+
+/// گروه‌هایی که ربات در آن‌ها عضو است — از رویدادهای تلگرام پر می‌شود
+model GroupChat {
+  id          Int       @id @default(autoincrement())
+  botId       Int       @map("bot_id")
+  chatId      BigInt    @map("chat_id")
+  title       String?
+  username    String?
+  chatType    String    @default("supergroup") @map("chat_type")
+  memberCount Int?      @map("member_count")
+  botIsAdmin  Boolean   @default(false) @map("bot_is_admin")
+  isJoined    Boolean   @default(true) @map("is_joined")
+  /// محل پخش آهنگ در این گروه: default از تنظیم سراسری پیروی می‌کند،
+  /// chat یعنی پیام صوتی در چت، voice یعنی استریم داخل ویس‌کال گروه
+  musicMode   String    @default("default") @map("music_mode")
+  lastSeenAt  DateTime  @default(now()) @map("last_seen_at")
+  leftAt      DateTime? @map("left_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  bot         Bot         @relation(fields: [botId], references: [id])
+  musicPlays  MusicPlay[]
+
+  @@unique([botId, chatId])
+  @@index([botId, isJoined])
+  @@map("group_chats")
+}
+
+/// کتابخانهٔ آهنگ‌ها؛ fileId همان file_id تلگرام است (برای همان ربات همیشگی)
+/// و filePath کپی محلی روی volume مشترک (برای استریم در ویس‌کال لازم است).
+model MusicTrack {
+  id        Int      @id @default(autoincrement())
+  botId     Int      @map("bot_id")
+  title     String
+  artist    String?
+  fileId    String?  @map("file_id") @db.Text
+  filePath  String?  @map("file_path")
+  duration  Int?
+  fileSize  Int?     @map("file_size")
+  mimeType  String?  @map("mime_type")
+  /// نوع فایل تلگرام: audio (آهنگ)، document (فایل MP3 ارسال‌شده به‌عنوان سند) یا voice
+  kind      String   @default("audio")
+  playCount Int      @default(0) @map("play_count")
+  isActive  Boolean  @default(true) @map("is_active")
+  addedBy   BigInt?  @map("added_by")
+  source    String   @default("panel")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  bot   Bot         @relation(fields: [botId], references: [id])
+  plays MusicPlay[]
+
+  @@index([botId, isActive])
+  @@map("music_tracks")
+}
+
+model MusicPlay {
+  id        Int             @id @default(autoincrement())
+  trackId   Int             @map("track_id")
+  botId     Int             @map("bot_id")
+  chatId    BigInt          @map("chat_id")
+  requestId BigInt?         @map("request_id")
+  requestName String?       @map("request_name")
+  messageId BigInt?         @map("message_id")
+  mode      String          @default("audio")
+  status    MusicPlayStatus @default(PLAYING)
+  startedAt DateTime        @default(now()) @map("started_at")
+  endedAt   DateTime?       @map("ended_at")
+
+  track MusicTrack  @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  group GroupChat?  @relation(fields: [botId, chatId], references: [botId, chatId])
+
+  @@index([status, startedAt])
+  @@index([chatId])
+  @@map("music_plays")
+}
+
+enum MusicPlayStatus {
+  PLAYING
+  PAUSED
+  FINISHED
+  STOPPED
+  FAILED
 }

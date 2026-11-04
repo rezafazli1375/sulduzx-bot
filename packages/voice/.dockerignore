@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+voice/
+data/
+*.session
+*.log
+.env

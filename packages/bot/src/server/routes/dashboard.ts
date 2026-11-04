@@ -15,6 +15,9 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       totalDownloads,
       totalProxies,
       totalBots,
+      totalGroups,
+      musicPlayed,
+      musicNowPlaying,
       totalConfigClaims,
       configUsers,
     ] = await Promise.all([
@@ -26,6 +29,11 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       prisma.download.count({ where: { status: 'COMPLETED' } }),
       prisma.mtprotoProxy.count({ where: { isActive: true } }),
       prisma.bot.count({ where: { isActive: true } }),
+      prisma.groupChat.count({ where: { isJoined: true } }),
+      prisma.musicPlay.count(),
+      prisma.musicPlay.count({
+        where: { status: 'PLAYING', startedAt: { gte: new Date(Date.now() - 3 * 60 * 60 * 1000) } },
+      }),
       prisma.configClaim.count(),
       prisma.user.count({ where: { configClaims: { some: {} } } }),
     ]);
@@ -78,6 +86,9 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         totalDownloads,
         totalProxies,
         totalBots,
+        totalGroups,
+        musicPlayed,
+        musicNowPlaying,
         totalConfigClaims,
         configUsers,
       },

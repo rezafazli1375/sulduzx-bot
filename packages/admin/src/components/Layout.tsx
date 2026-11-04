@@ -21,6 +21,7 @@ import {
   Menu as MenuIcon,
   X,
   Gamepad2,
+  Music,
 } from 'lucide-react';
 
 const menuItems = [
@@ -34,6 +35,7 @@ const menuItems = [
   { path: '/users', label: 'کاربران', icon: Users },
   { path: '/configs', label: 'کانفیگ‌ها', icon: KeyRound },
   { path: '/games', label: 'بازی‌ها', icon: Gamepad2 },
+  { path: '/music', label: 'موزیک', icon: Music },
   { path: '/tickets', label: 'تیکت‌ها', icon: Ticket },
   { path: '/broadcast', label: 'پیام همگانی', icon: Megaphone },
   { path: '/settings', label: 'تنظیمات', icon: Settings },

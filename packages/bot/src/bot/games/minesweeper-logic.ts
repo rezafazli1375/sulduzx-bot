@@ -1,9 +1,61 @@
 // ─── Minesweeper — pure board logic (no Telegram / DB dependencies) ───
+//
+// The rule set is the one Iranian Telegram players know (documented for
+// @minroobot, for the competitive variant MineSeeker, and mirrored by the
+// open-source TaymazKH/minesweeper-bot):
+//
+//  • Players alternate taps on one shared board.
+//  • Tapping a MINE is the goal: the cell is marked with the tapper's colour,
+//    the tapper scores +1 and keeps the turn (a bonus tap).
+//  • Tapping a SAFE cell opens it with its adjacent-mine number (a 0 opens the
+//    whole empty region) and the turn passes to the next player.
+//  • Nobody loses lives. The winner is whoever marked the most mines.
+
+export type MsColour = 'red' | 'blue' | 'green' | 'yellow' | 'purple' | 'brown';
+
+export const MS_COLORS: MsColour[] = ['red', 'blue', 'green', 'yellow', 'purple', 'brown'];
+
+/** نقطهٔ رنگی بازیکن (برای نوبت و فهرست امتیاز) */
+export const MS_EMOJI: Record<MsColour, string> = {
+  red: '🔴',
+  blue: '🔵',
+  green: '🟢',
+  yellow: '🟡',
+  purple: '🟣',
+  brown: '🟤',
+};
+
+/** مربع رنگی که روی خانهٔ مین نشسته (علامت «این مین مال من است») */
+export const MS_MARK: Record<MsColour, string> = {
+  red: '🟥',
+  blue: '🟦',
+  green: '🟩',
+  yellow: '🟨',
+  purple: '🟪',
+  brown: '🟫',
+};
+
+export const MS_NAME_FA: Record<MsColour, string> = {
+  red: 'قرمز',
+  blue: 'آبی',
+  green: 'سبز',
+  yellow: 'زرد',
+  purple: 'بنفش',
+  brown: 'قهوه‌ای',
+};
+
+export const MIN_MS_PLAYERS = 2;
+export const MAX_MS_PLAYERS = 6;
+
+export function colourForSeat(seat: number): MsColour {
+  return MS_COLORS[seat % MS_COLORS.length];
+}
 
 export interface MsCell {
   isMine: boolean;
   revealed: boolean;
-  flagged: boolean;
+  /** صندلیِ بازیکنی که این خانه را باز/پیدا کرده (null = هنوز باز نشده) */
+  foundBy: number | null;
   adjacent: number;
 }
 
@@ -15,14 +67,16 @@ export interface MsDifficulty {
   rows: number;
   cols: number;
   mines: number;
-  points: number;
+  /** جایزهٔ برنده */
+  bonus: number;
 }
 
-// هر سطح سختی: تعداد خانه‌ها زیر ۱۰۰ می‌ماند تا محدودیت دکمه‌های تلگرام رعایت شود
+// تعداد خانه‌ها زیر ۱۰۰ می‌ماند تا محدودیت دکمه‌های تلگرام رعایت شود.
+// تعداد مین‌ها فرد است تا در بازی دو نفره صفحه نصف‌نصف نشود.
 export const MS_DIFFICULTIES: MsDifficulty[] = [
-  { key: 'easy', label: 'آسان', rows: 7, cols: 6, mines: 8, points: 40 },
-  { key: 'medium', label: 'متوسط', rows: 8, cols: 8, mines: 12, points: 70 },
-  { key: 'hard', label: 'سخت', rows: 9, cols: 9, mines: 20, points: 110 },
+  { key: 'easy', label: 'آسان', rows: 7, cols: 6, mines: 9, bonus: 30 },
+  { key: 'medium', label: 'متوسط', rows: 8, cols: 8, mines: 15, bonus: 45 },
+  { key: 'hard', label: 'سخت', rows: 9, cols: 9, mines: 21, bonus: 60 },
 ];
 
 export function getMsDifficulty(key: MsDifficultyKey): MsDifficulty {
@@ -40,41 +94,25 @@ export function createMsBoard(rows: number, cols: number): MsCell[][] {
     Array.from({ length: cols }, () => ({
       isMine: false,
       revealed: false,
-      flagged: false,
+      foundBy: null,
       adjacent: 0,
     }))
   );
 }
 
 /**
- * چیدن مین‌ها با «ایمنی اولین کلیک»:
- * خانهٔ اول و هشت خانهٔ همسایهٔ آن هرگز مین نمی‌شوند (تا حد امکان).
+ * چیدن مین‌ها. برخلاف مین‌روب کلاسیک، اولین کلیک نیازی به ایمنی ندارد؛
+ * چون در این قانون زدن روی مین جایزه دارد، نه جریمه.
  */
-export function placeMsMines(
-  board: MsCell[][],
-  rows: number,
-  cols: number,
-  count: number,
-  safeR: number,
-  safeC: number
-): void {
-  const far: [number, number][] = [];
-  const near: [number, number][] = [];
-
+export function placeMsMines(board: MsCell[][], rows: number, cols: number, count: number): void {
+  const cells: [number, number][] = [];
   for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      if (r === safeR && c === safeC) continue;
-      const isAdjacent = Math.abs(r - safeR) <= 1 && Math.abs(c - safeC) <= 1;
-      if (isAdjacent) near.push([r, c]);
-      else far.push([r, c]);
-    }
+    for (let c = 0; c < cols; c++) cells.push([r, c]);
   }
-
-  shuffleInPlace(far);
-  shuffleInPlace(near);
-
-  const chosen = [...far, ...near].slice(0, Math.min(count, rows * cols - 1));
-  for (const [r, c] of chosen) board[r][c].isMine = true;
+  shuffleInPlace(cells);
+  for (const [r, c] of cells.slice(0, Math.min(count, cells.length))) {
+    board[r][c].isMine = true;
+  }
 }
 
 /** شمارش مین‌های مجاور هر خانه */
@@ -98,29 +136,22 @@ export function computeMsAdjacent(board: MsCell[][], rows: number, cols: number)
 }
 
 /**
- * «حف» — باز کردن یک خانه:
- * اگر خانه مین باشد فقط همان خانه باز می‌شود؛
- * اگر خانه ۰ باشد کل ناحیهٔ خالی و خانه‌های مرزی آن هم‌زمان باز می‌شوند.
+ * باز کردن یک خانهٔ امن و ناحیهٔ خالیِ اطرافش (flood-fill).
+ * خانه‌های باز‌شده به نام `seat` ثبت می‌شوند (برای مساوی‌شکنی).
+ * تعداد خانه‌های باز‌شده برگردانده می‌شود.
  */
 export function revealMsFlood(
   board: MsCell[][],
   rows: number,
   cols: number,
   startR: number,
-  startC: number
-): { revealed: number; mineHit: boolean } {
-  const result = { revealed: 0, mineHit: false };
+  startC: number,
+  seat: number
+): number {
   const start = board[startR][startC];
-  if (!start || start.revealed) return result;
+  if (!start || start.revealed || start.isMine) return 0;
 
-  if (start.isMine) {
-    start.revealed = true;
-    start.flagged = false;
-    result.revealed = 1;
-    result.mineHit = true;
-    return result;
-  }
-
+  let opened = 0;
   const queue: [number, number][] = [[startR, startC]];
   const seen = new Set<number>();
 
@@ -134,8 +165,8 @@ export function revealMsFlood(
     if (!cell || cell.revealed || cell.isMine) continue;
 
     cell.revealed = true;
-    cell.flagged = false;
-    result.revealed++;
+    cell.foundBy = seat;
+    opened++;
 
     if (cell.adjacent === 0) {
       for (const [dr, dc] of NEIGHBOURS) {
@@ -149,110 +180,190 @@ export function revealMsFlood(
     }
   }
 
-  return result;
+  return opened;
+}
+
+export type MsTap =
+  | { kind: 'invalid'; reason: 'out-of-range' | 'already-open' }
+  | { kind: 'mine'; seat: number }
+  | { kind: 'safe'; opened: number };
+
+/**
+ * یک ضربه روی خانهٔ بسته:
+ * مین → با رنگِ زننده علامت می‌خورد (نوبت حفظ می‌شود).
+ * امن → خانه و ناحیهٔ خالیِ اطرافش باز می‌شود (نوبت منتقل می‌شود).
+ */
+export function tapMsCell(
+  board: MsCell[][],
+  rows: number,
+  cols: number,
+  r: number,
+  c: number,
+  seat: number
+): MsTap {
+  if (Number.isNaN(r) || Number.isNaN(c) || r < 0 || r >= rows || c < 0 || c >= cols) {
+    return { kind: 'invalid', reason: 'out-of-range' };
+  }
+  const cell = board[r][c];
+  if (!cell) return { kind: 'invalid', reason: 'out-of-range' };
+  if (cell.revealed) return { kind: 'invalid', reason: 'already-open' };
+
+  if (cell.isMine) {
+    cell.revealed = true;
+    cell.foundBy = seat;
+    return { kind: 'mine', seat };
+  }
+
+  return { kind: 'safe', opened: revealMsFlood(board, rows, cols, r, c, seat) };
 }
 
 /**
- * «باز کردن اطراف» (Chord):
- * وقتی تعداد پرچم‌های یک خانهٔ باز برابر عدد روی آن باشد، خانه‌های باز نشدهٔ اطراف باز می‌شوند.
+ * «باز کردن اطراف» با ضربه روی خانهٔ عدددارِ باز:
+ * وقتی همهٔ مین‌های اطراف این خانه پیدا (علامت) خورده باشند، بقیهٔ خانه‌های
+ * بستهٔ اطراف با یک ضربه باز می‌شوند — چون قطعاً امن‌اند.
+ * خودِ این ضربه مین جدیدی نمی‌دهد، پس نوبت منتقل می‌شود.
  */
-export function chordMs(
+export function openAroundFound(
   board: MsCell[][],
   rows: number,
   cols: number,
   targetR: number,
-  targetC: number
-): { revealed: number; mineHit: boolean } | null {
+  targetC: number,
+  seat: number
+): { opened: number } | null {
   const target = board[targetR][targetC];
   if (!target || !target.revealed || target.isMine || target.adjacent === 0) return null;
 
-  let flags = 0;
-  for (const [dr, dc] of NEIGHBOURS) {
-    const nr = targetR + dr;
-    const nc = targetC + dc;
-    if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
-    if (board[nr][nc].flagged) flags++;
-  }
-
-  if (flags !== target.adjacent) return null;
-
-  const result = { revealed: 0, mineHit: false };
-
+  let marked = 0;
+  const hidden: [number, number][] = [];
   for (const [dr, dc] of NEIGHBOURS) {
     const nr = targetR + dr;
     const nc = targetC + dc;
     if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
     const cell = board[nr][nc];
-    if (cell.revealed) continue;
-    if (cell.isMine) {
-      cell.revealed = true;
-      cell.flagged = false;
-      result.revealed++;
-      result.mineHit = true;
-      continue;
-    }
-    const sub = revealMsFlood(board, rows, cols, nr, nc);
-    result.revealed += sub.revealed;
-    if (sub.mineHit) result.mineHit = true;
+    if (cell.isMine && cell.foundBy !== null) marked++;
+    else if (!cell.revealed) hidden.push([nr, nc]);
   }
 
-  return result;
+  if (marked !== target.adjacent) return null;
+
+  let opened = 0;
+  for (const [r, c] of hidden) opened += revealMsFlood(board, rows, cols, r, c, seat);
+  return { opened };
 }
 
-/** آمار پرچم‌ها: روی مین / روی خانهٔ امن */
-export function countMsFlags(
-  board: MsCell[][],
-  rows: number,
-  cols: number
-): { onMines: number; onSafe: number; total: number } {
-  let onMines = 0;
-  let onSafe = 0;
-  let total = 0;
-
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const cell = board[r][c];
-      if (!cell.flagged) continue;
-      total++;
-      if (cell.isMine) onMines++;
-      else onSafe++;
-    }
-  }
-
-  return { onMines, onSafe, total };
+export interface MsBoardState {
+  revealedSafe: number;
+  totalSafe: number;
+  minesFound: number;
+  mineCount: number;
+  minesLeft: number;
+  allMinesFound: boolean;
+  hiddenLeft: number;
 }
 
-/** وضعیت کلی صفحه */
 export function msBoardState(
   board: MsCell[][],
   rows: number,
   cols: number,
   mineCount: number
-): {
-  revealedSafe: number;
-  totalSafe: number;
-  allSafeRevealed: boolean;
-  allMinesFound: boolean;
-  flags: { onMines: number; onSafe: number; total: number };
-} {
+): MsBoardState {
   let revealedSafe = 0;
+  let minesFound = 0;
+  let hiddenLeft = 0;
+
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const cell = board[r][c];
-      if (cell.revealed && !cell.isMine) revealedSafe++;
+      if (!cell.revealed) hiddenLeft++;
+      else if (cell.isMine) minesFound++;
+      else revealedSafe++;
     }
   }
 
   const totalSafe = rows * cols - mineCount;
-  const flags = countMsFlags(board, rows, cols);
 
   return {
     revealedSafe,
     totalSafe,
-    allSafeRevealed: revealedSafe >= totalSafe,
-    allMinesFound: flags.onMines >= mineCount && flags.onSafe === 0,
-    flags,
+    minesFound,
+    mineCount,
+    minesLeft: Math.max(0, mineCount - minesFound),
+    allMinesFound: minesFound >= mineCount,
+    hiddenLeft,
   };
+}
+
+/** چند مینِ این صندلی روی تخته علامت خورده است */
+export function minesFoundBySeat(board: MsCell[][], seat: number): number {
+  let count = 0;
+  for (const row of board) {
+    for (const cell of row) {
+      if (cell.isMine && cell.foundBy === seat) count++;
+    }
+  }
+  return count;
+}
+
+/** خانه‌های امنی که این صندلی باز کرده (برای مساوی‌شکنی) */
+export function safeOpenedBySeat(board: MsCell[][], seat: number): number {
+  let count = 0;
+  for (const row of board) {
+    for (const cell of row) {
+      if (!cell.isMine && cell.revealed && cell.foundBy === seat) count++;
+    }
+  }
+  return count;
+}
+
+/** در پایان بازی، مین‌های پیدا‌نشده هم نمایش داده می‌شوند */
+export function revealUnfoundMines(board: MsCell[][]): void {
+  for (const row of board) {
+    for (const cell of row) {
+      if (cell.isMine && !cell.revealed) cell.revealed = true;
+    }
+  }
+}
+
+export interface MsStanding {
+  seat: number;
+  mines: number;
+  opened: number;
+}
+
+/**
+ * رتبه‌بندی: اول بیشترین مین، بعد بیشترین خانهٔ امنِ باز.
+ * `draw` یعنی دو نفر اول در هر دو معیار مساوی‌اند.
+ */
+export function rankMsStandings(standings: MsStanding[]): { ordered: MsStanding[]; draw: boolean } {
+  const ordered = standings.slice().sort((a, b) => {
+    if (b.mines !== a.mines) return b.mines - a.mines;
+    if (b.opened !== a.opened) return b.opened - a.opened;
+    return a.seat - b.seat;
+  });
+
+  if (ordered.length < 2) return { ordered, draw: false };
+
+  const top = ordered[0];
+  const next = ordered[1];
+  const draw = top.mines === next.mines && top.opened === next.opened;
+
+  return { ordered, draw };
+}
+
+export const MS_CELL_HIDDEN = '⬜';
+export const MS_CELL_EMPTY = '·';
+export const MS_CELL_MINE = '💣';
+
+/** برچسب یک خانه برای نمایش روی تخته */
+export function msCellLabel(cell: MsCell): string {
+  if (!cell.revealed) return MS_CELL_HIDDEN;
+  if (cell.isMine) {
+    if (cell.foundBy === null) return MS_CELL_MINE;
+    return MS_MARK[colourForSeat(cell.foundBy)];
+  }
+  if (cell.adjacent === 0) return MS_CELL_EMPTY;
+  return String(cell.adjacent);
 }
 
 function shuffleInPlace<T>(arr: T[]): void {

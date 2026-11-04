@@ -27,6 +27,8 @@ const GAME_DEFS = [
   { value: 'MINESWEEPER', label: '💣 مین‌روب', settingKey: 'game_minesweeper_enabled' },
   { value: 'WORDLE', label: '🔤 کلمه‌یاب', settingKey: 'game_wordle_enabled' },
   { value: 'HOKM', label: '🃏 حکم', settingKey: 'game_hokm_enabled' },
+  { value: 'MENCH', label: '🎲 منچ', settingKey: 'game_mench_enabled' },
+  { value: 'SCALA', label: '🇮🇹 اسکالا', settingKey: 'game_scala_enabled' },
 ];
 
 // فقط بازی‌هایی که از سوال استفاده می‌کنند در فرم سوال نمایش داده می‌شوند

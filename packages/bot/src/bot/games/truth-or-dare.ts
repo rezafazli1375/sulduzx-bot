@@ -2,7 +2,14 @@ import { Context, Markup } from 'telegraf';
 import { prisma } from '../../lib/prisma.js';
 import { getBotId } from '../../lib/bot-context.js';
 import { findUserByCtx } from '../../lib/user.js';
-import { requireGroup, checkGameChannelJoin } from './utils.js';
+import {
+  GAME_CANCEL_PURGE_DELAY_MS,
+  GAME_RESULT_PURGE_DELAY_MS,
+  checkGameChannelJoin,
+  purgeGameMessages,
+  requireGroup,
+  trackGameMessage,
+} from './utils.js';
 
 // ─── Types ───────────────────────────────────
 interface TodSession {
@@ -177,6 +184,7 @@ export async function handleTruthOrDare(ctx: Context) {
   );
 
   session.messageId = msg.message_id;
+  trackGameMessage(key, chatId, msg.message_id, ctx.telegram);
 }
 
 // ─── Action Handler ──────────────────────────
@@ -194,6 +202,7 @@ export async function handleTruthOrDareAction(ctx: Context) {
 
   if (Date.now() - session.createdAt > 120000) {
     sessions.delete(key);
+    void purgeGameMessages(ctx.telegram, key, GAME_CANCEL_PURGE_DELAY_MS);
     await ctx.answerCbQuery('⏰ زمان بازی تمام شد.');
     try { await ctx.editMessageText('⏰ بازی جرعت و حقیقت منقضی شد.'); } catch {}
     return;
@@ -223,6 +232,7 @@ export async function handleTruthOrDareAction(ctx: Context) {
       return;
     }
     sessions.delete(key);
+    void purgeGameMessages(ctx.telegram, key, GAME_CANCEL_PURGE_DELAY_MS);
     await ctx.answerCbQuery('بازی لغو شد.');
     try { await ctx.editMessageText('❌ بازی جرعت و حقیقت لغو شد.'); } catch {}
     return;
@@ -300,6 +310,7 @@ export async function handleTruthOrDareAction(ctx: Context) {
     session.skipCount++;
     if (session.skipCount >= 2) {
       sessions.delete(key);
+      void purgeGameMessages(ctx.telegram, key, GAME_CANCEL_PURGE_DELAY_MS);
       await ctx.answerCbQuery('❌ ۲ بار رد کردی! بازی لغو شد.');
       try {
         await ctx.editMessageText('❌ بازی جرعت و حقیقت لغو شد (۲ بار رد کردن).');
@@ -347,6 +358,7 @@ export async function handleTruthOrDareAction(ctx: Context) {
     }
 
     sessions.delete(key);
+    void purgeGameMessages(ctx.telegram, key, GAME_RESULT_PURGE_DELAY_MS);
     await ctx.answerCbQuery(`🎉 آفرین! ${points} امتیاز گرفتی!`);
     try {
       await ctx.editMessageText(

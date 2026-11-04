@@ -16,14 +16,14 @@ const GAME_DEFS = [
   {
     key: 'game_tic_tac_toe_enabled',
     action: 'game_tic_tac_toe',
-    button: '❌⭕ بازی دوز',
+    button: '❌⭕ دوز',
     desc: '❌⭕ *دوز* — کلاسیک ۳×۳ یا حرفه‌ای ۶×۷! (/dooz)',
   },
   {
     key: 'game_minesweeper_enabled',
     action: 'game_minesweeper',
-    button: '💣 پیدا کردن بمب',
-    desc: '💣 *مین‌روب* — مین‌ها را پیدا کنید! حف، پرچم‌گذاری و سه سطح سختی (/meen)',
+    button: '💣 مین‌روب',
+    desc: '💣 *مین‌روب* — مین‌ها را پیدا نکن! کندن، پرچم‌گذاری و سه سطح سختی (/meen)',
   },
   {
     key: 'game_wordle_enabled',
@@ -36,6 +36,18 @@ const GAME_DEFS = [
     action: 'game_hokm',
     button: '🃏 حکم',
     desc: '🃏 *حکم* — چهارنفره، حاکم حکم را می‌زند و ۷ تریک برنده است (/hokm)',
+  },
+  {
+    key: 'game_mench_enabled',
+    action: 'game_mench',
+    button: '🎲 منچ',
+    desc: '🎲 *منچ* — ۲ تا ۴ نفره؛ تاس بینداز، مهره حریف را بزن و زودتر به مرکز برس (/mench)',
+  },
+  {
+    key: 'game_scala_enabled',
+    action: 'game_scala',
+    button: '🇮🇹 اسکالا',
+    desc: '🇮🇹 *اسکالا* — ۲ تا ۴ نفره با ۱۰۸ کارت؛ سری و ست بچین، با ۴۰ امتیاز باز شو و بازی را ببند (/scala)',
   },
 ];
 
@@ -150,7 +162,7 @@ export async function handleGames(ctx: Context) {
     '🎮 *به بخش بازی‌ها خوش آمدید!*\n\n' +
     'یکی از بازی‌های زیر را انتخاب کنید:\n\n' +
     descriptions.join('\n') +
-    '\n\n💡 دستورهای سریع: /meen ، /dooz ، /kalame ، /hokm',
+    '\n\n💡 دستورهای سریع: /meen ، /dooz ، /kalame ، /hokm ، /mench ، /scala',
     { parse_mode: 'Markdown', ...Markup.inlineKeyboard(rows) }
   );
 }
@@ -165,7 +177,14 @@ export async function handleGameCheckMembership(ctx: Context) {
 
 // ─── Direct Game Commands ────────────────────
 // /meen, /dooz, /kalame, /hokm, /joraat start a game immediately.
-export type DirectGameKey = 'truth_or_dare' | 'tic_tac_toe' | 'minesweeper' | 'wordle' | 'hokm';
+export type DirectGameKey =
+  | 'truth_or_dare'
+  | 'tic_tac_toe'
+  | 'minesweeper'
+  | 'wordle'
+  | 'hokm'
+  | 'mench'
+  | 'scala';
 
 const DIRECT_GAME_DEFS: Record<DirectGameKey, { settingKey: string; label: string; run: (ctx: Context) => Promise<void> }> = {
   truth_or_dare: {
@@ -192,6 +211,16 @@ const DIRECT_GAME_DEFS: Record<DirectGameKey, { settingKey: string; label: strin
     settingKey: 'game_hokm_enabled',
     label: 'حکم',
     run: async (ctx) => (await import('./hokm.js')).handleHokm(ctx),
+  },
+  mench: {
+    settingKey: 'game_mench_enabled',
+    label: 'منچ',
+    run: async (ctx) => (await import('./mench.js')).handleMench(ctx),
+  },
+  scala: {
+    settingKey: 'game_scala_enabled',
+    label: 'اسکالا',
+    run: async (ctx) => (await import('./scala.js')).handleScala(ctx),
   },
 };
 
@@ -227,6 +256,8 @@ export async function handleGameAction(ctx: Context) {
   const { handleMinesweeper, handleMinesweeperAction } = await import('./minesweeper.js');
   const { handleWordle, handleWordleAction } = await import('./wordle.js');
   const { handleHokm, handleHokmAction } = await import('./hokm.js');
+  const { handleMench, handleMenchAction } = await import('./mench.js');
+  const { handleScala, handleScalaAction } = await import('./scala.js');
 
   switch (action) {
     case 'games':
@@ -284,6 +315,26 @@ export async function handleGameAction(ctx: Context) {
       await handleHokm(ctx);
       break;
 
+    // Mench
+    case 'game_mench':
+      if (!(await isGameEnabled('game_mench_enabled'))) {
+        await rejectDisabled(ctx);
+        break;
+      }
+      await ctx.answerCbQuery();
+      await handleMench(ctx);
+      break;
+
+    // Scala
+    case 'game_scala':
+      if (!(await isGameEnabled('game_scala_enabled'))) {
+        await rejectDisabled(ctx);
+        break;
+      }
+      await ctx.answerCbQuery();
+      await handleScala(ctx);
+      break;
+
     default:
       // Route to specific game handlers
       if (action.startsWith('tod_')) {
@@ -316,6 +367,18 @@ export async function handleGameAction(ctx: Context) {
           break;
         }
         await handleHokmAction(ctx);
+      } else if (action.startsWith('mench_')) {
+        if (!(await isGameEnabled('game_mench_enabled'))) {
+          await rejectDisabled(ctx);
+          break;
+        }
+        await handleMenchAction(ctx);
+      } else if (action.startsWith('scala_')) {
+        if (!(await isGameEnabled('game_scala_enabled'))) {
+          await rejectDisabled(ctx);
+          break;
+        }
+        await handleScalaAction(ctx);
       }
       return false;
   }

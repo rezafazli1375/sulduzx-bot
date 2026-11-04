@@ -1,6 +1,16 @@
 import { Context, Markup } from 'telegraf';
 import { prisma } from '../../lib/prisma.js';
-import { requireGroup, checkGameChannelJoin } from './utils.js';
+import {
+  GAME_CANCEL_PURGE_DELAY_MS,
+  GAME_RESULT_PURGE_DELAY_MS,
+  checkGameChannelJoin,
+  deleteGameMessage,
+  postGameMessage,
+  purgeGameMessages,
+  requireGroup,
+  sendGameMessage,
+  trackGameMessage,
+} from './utils.js';
 import {
   Card,
   Suit,
@@ -58,6 +68,11 @@ interface HokmSession {
   busy: boolean;
   /** آخرین متنی که روی میز بازی (پیام گروه) نمایش داده شده */
   boardSignature: string | null;
+  /**
+   * true یعنی تختهٔ گروه پاک شده و بازی به گفتگوی خصوصی منتقل شده است.
+   * بعد از این، هیچ ویرایشی به گروه فرستاده نمی‌شود.
+   */
+  boardCleared: boolean;
   createdAt: number;
 }
 
@@ -80,11 +95,19 @@ function sleep(ms: number): Promise<void> {
 // ─── Helpers ─────────────────────────────────
 /** بازی فعالِ یک کاربر (کلیک از گفتگوی خصوصی همیشه به این نیاز دارد) */
 function findSessionByUser(userId: number): HokmSession | undefined {
+  // بازی تمام‌شده هم برگردانده می‌شود (آخرین شانس)، وگرنه دکمهٔ «بازی جدید»
+  // که در گفتگوی خصوصیِ میزبان هست، به هیچ session نمی‌رسد. بازی‌های فعال
+  // اولویت دارند و هر دست‌ه‌کاری روی بازیِ تمام‌شده با بررسی status رد می‌شود.
+  let finished: HokmSession | undefined;
   for (const session of sessions.values()) {
-    if (session.status === 'finished') continue;
-    if (session.players.some((p) => p.id === userId)) return session;
+    if (!session.players.some((p) => p.id === userId)) continue;
+    if (session.status === 'finished') {
+      finished ??= session;
+      continue;
+    }
+    return session;
   }
-  return undefined;
+  return finished;
 }
 
 function seatOf(session: HokmSession, userId: number): number {
@@ -108,6 +131,34 @@ function teamTitle(session: HokmSession, seat: number): string {
 
 function humanCount(session: HokmSession): number {
   return session.players.filter((p) => !p.isBot && p.id !== null).length;
+}
+
+const FA_DIGITS = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+
+/** عدد لاتین به عدد فارسی، برای برچسب صندلی‌ها */
+function faNum(value: number): string {
+  return String(value)
+    .split('')
+    .map((d) => FA_DIGITS[Number(d)] ?? d)
+    .join('');
+}
+
+/** صندلی‌های خالیِ لابی؛ صندلی ۱ میزبان است و بقیه «— خال —» */
+function lobbyPlayers(hostId: number, hostName?: string): HokmPlayer[] {
+  const seats: HokmPlayer[] = [];
+  for (let seat = 0; seat < SEAT_COUNT; seat++) {
+    seats.push({
+      id: seat === 0 ? hostId : null,
+      name: seat === 0 ? hostName || 'میزبان' : `بازیکن ${faNum(seat + 1)}`,
+      hand: [],
+      initialHand: [],
+      tricks: 0,
+      isBot: false,
+      dmMessageId: null,
+      dmSignature: null,
+    });
+  }
+  return seats;
 }
 
 // ─── Group board (public) ─────────────────────
@@ -151,6 +202,11 @@ function buildHokmText(session: HokmSession): string {
     lines.push(
       '🎯 برای شرکت دکمهٔ «🎮 نشستن روی صندلی» را بزنید؛ سپس میزبان «▶️ شروع بازی» را می‌زند.'
     );
+    lines.push('');
+    lines.push(
+      '📱 به‌محض *شروع بازی* این پیام از گروه پاک می‌شود و ادامهٔ بازی (کارت‌ها، حکم و نوبت‌ها) فقط در *گفتگوی خصوصی* شما با ربات است؛ گروه شلوغ نمی‌شود.'
+    );
+    lines.push('🧹 پیام کوتاه نتیجهٔ بازی هم کمی بعد از گروه پاک می‌شود.');
     return lines.join('\n');
   }
 
@@ -179,40 +235,6 @@ function buildHokmText(session: HokmSession): string {
     lines.push('🎯 *میزبان* باید خال حکم را انتخاب کند.');
     lines.push('');
     lines.push('🔒 دست شما در گفتگوی خصوصی با ربات است.');
-    return lines.join('\n');
-  }
-
-  if (session.status === 'finished' && session.result) {
-    const hostSeat = seatOf(session, session.hostId);
-    const humanTeam = hostSeat >= 0 ? teamOf(hostSeat) : 0;
-    const humanWon = session.result.winnerTeam === humanTeam;
-    lines.push('🏆 *بازی تمام شد!*');
-    lines.push('');
-    lines.push(humanWon ? '🎉 *تیم شما برنده شد!*' : '😔 *تیم شما باخت!*');
-    if (session.result.kot) {
-      lines.push('🃏 *کوت!* تیم مقابل هیچ تریکی نگرفت — دو برابر باخت.');
-    }
-    if (session.result.su) {
-      lines.push('🎊 *سو!* یک بازیکن تمام ۱۳ تریک را گرفت.');
-    }
-    if (humanWon) {
-      const points = session.result.kot ? 120 : session.result.su ? 100 : 60;
-      lines.push(`⭐️ ${points} امتیاز دریافت شد!`);
-    }
-    lines.push('');
-    lines.push('🂠 *تریک هر بازیکن:*');
-    for (let seat = 0; seat < SEAT_COUNT; seat++) {
-      lines.push(`• ${playerName(session.players[seat])}: ${session.players[seat].tricks} تریک`);
-    }
-    lines.push('');
-    lines.push('🃏 *دست‌های پایان بازی (افشا شد):*');
-    for (let seat = 0; seat < SEAT_COUNT; seat++) {
-      const p = session.players[seat];
-      const reveal = p.initialHand.length ? p.initialHand : p.hand;
-      lines.push(
-        `• صندلی ${seat + 1} ${playerName(p)}: ${sortHand(reveal).map((c) => cardLabel(c)).join(' ') || '—'}`
-      );
-    }
     return lines.join('\n');
   }
 
@@ -247,6 +269,11 @@ function buildHokmPrivateText(session: HokmSession, seat: number): string {
   lines.push('');
   lines.push('🔒 این پیام فقط برای شماست. بازیکنان دیگر دست شما را نمی‌بینند.');
   lines.push('');
+
+  if (session.notices.length) {
+    for (const notice of session.notices) lines.push(notice);
+    lines.push('');
+  }
   lines.push(
     `🎴 *خال حکم:* ${session.trumpSuit ? SUIT_EMOJI[session.trumpSuit] + ' ' + SUIT_NAME_FA[session.trumpSuit] : '—'}`
   );
@@ -254,8 +281,61 @@ function buildHokmPrivateText(session: HokmSession, seat: number): string {
   lines.push(`🪑 *هم‌تیمی شما:* ${playerName(partner, false)}`);
   lines.push(`📊 *تریک‌ها:* تیم شما ${session.teamScores[myTeam]} | تیم مقابل ${session.teamScores[otherTeam]}`);
   lines.push('');
+  if (session.status === 'waiting') {
+    lines.push('⏳ هنوز بازی شروع نشده؛ منتظر بقیهٔ بازیکنان باشید.');
+    return lines.join('\n');
+  }
+
   lines.push(`🂠 *دست شما (${player.hand.length} کارت):*`);
   lines.push(sortHand(player.hand).map((c) => cardLabel(c)).join(' ') || '—');
+  lines.push('');
+
+  if (session.status === 'bidding') {
+    if (session.hostId === player.id) {
+      lines.push('🎯 *شما میزبانید* — خال حکم را از دکمه‌های زیر انتخاب کنید.');
+    } else {
+      lines.push('⏳ میزبان در حال انتخاب خال حکم است…');
+    }
+    return lines.join('\n');
+  }
+
+  if (session.status === 'finished' && session.result) {
+    const result = session.result;
+    const humanWon = result.winnerTeam === myTeam;
+    const points = result.kot ? 120 : result.su ? 100 : 60;
+
+    lines.push(humanWon ? '🎉 *تیم شما برنده شد!*' : '😔 *تیم شما باخت!*');
+    if (result.kot) lines.push('🃏 *کوت!* تیم مقابل هیچ تریکی نگرفت — دو برابر باخت.');
+    if (result.su) lines.push('🎊 *سو!* یک بازیکن هر ۱۳ تریک را گرفت.');
+    if (humanWon) lines.push(`⭐️ ${points} امتیاز دریافت کردید!`);
+    lines.push('');
+    lines.push('🂠 *تریک هر بازیکن:*');
+    for (let s = 0; s < SEAT_COUNT; s++) {
+      lines.push(
+        `• صندلی ${s + 1} ${playerName(session.players[s], false)}: ${session.players[s].tricks} تریک`
+      );
+    }
+    lines.push('');
+    lines.push('🃏 *دست همهٔ بازیکنان (افشا شد):*');
+    for (let s = 0; s < SEAT_COUNT; s++) {
+      const p = session.players[s];
+      const reveal = p.initialHand.length ? p.initialHand : p.hand;
+      lines.push(
+        `• صندلی ${s + 1} ${playerName(p, false)}: ${sortHand(reveal).map((c) => cardLabel(c)).join(' ') || '—'}`
+      );
+    }
+    return lines.join('\n');
+  }
+
+  // ── در حال بازی: تریک جاری + نوبت ──
+  lines.push('🎴 *تریک جاری:*');
+  for (let s = 0; s < SEAT_COUNT; s++) {
+    const played = session.currentTrick[s]?.card;
+    const mark = s === seat ? ' (شما)' : '';
+    lines.push(
+      `• صندلی ${s + 1} ${playerName(session.players[s], false)}${mark}: ${played ? cardLabel(played) : '—'}`
+    );
+  }
   lines.push('');
 
   if (session.currentPlayer === seat) {
@@ -263,7 +343,7 @@ function buildHokmPrivateText(session: HokmSession, seat: number): string {
     if (led) {
       lines.push(`⚠️ باید ${SUIT_NAME_FA[led.suit]} بازی کنید (خال خواسته‌شده).`);
     } else {
-      lines.push('✅ *نوبت شماست!* کارت خود را انتخاب کنید.');
+      lines.push('✅ *نوبت شماست!* کارت خود را از دکمه‌های زیر انتخاب کنید.');
     }
   } else {
     lines.push(`⏳ نوبت «${playerName(session.players[session.currentPlayer], false)}» است — منتظر بمانید.`);
@@ -275,6 +355,7 @@ function buildHokmPrivateText(session: HokmSession, seat: number): string {
 function buildHokmPrivateKeyboard(session: HokmSession, seat: number): any {
   const keyboard: any[][] = [];
   const player = session.players[seat];
+  const isHost = session.hostId === player.id;
 
   if (session.status === 'playing' && session.currentPlayer === seat) {
     const playable = player.hand.filter((card) =>
@@ -293,49 +374,70 @@ function buildHokmPrivateKeyboard(session: HokmSession, seat: number): any {
     }
   }
 
-  keyboard.push([Markup.button.callback('🔄 به‌روزرسانی دست', 'hokm_resend')]);
-  return Markup.inlineKeyboard(keyboard);
-}
-
-// ─── Group keyboard ───────────────────────────
-function buildHokmKeyboard(session: HokmSession): any {
-  if (session.status === 'waiting') {
-    const full = humanCount(session) >= SEAT_COUNT;
-    const rows: any[][] = [];
-    if (full) {
-      rows.push([Markup.button.callback('♟️ میز کامل است', 'hokm_wait')]);
-    } else {
-      rows.push([Markup.button.callback('🎮 نشستن روی صندلی', 'hokm_join')]);
-      rows.push([Markup.button.callback('🚪 خروج از بازی', 'hokm_leave')]);
-    }
-    rows.push([Markup.button.callback('▶️ شروع بازی', 'hokm_start')]);
-    rows.push([Markup.button.callback('❌ لغو', 'hokm_cancel')]);
-    return Markup.inlineKeyboard(rows);
-  }
-
-  if (session.status === 'bidding') {
-    return Markup.inlineKeyboard([
-      [
-        Markup.button.callback('❤️ حکم دل', 'hokm_trump_hearts'),
-        Markup.button.callback('♦️ حکم خشت', 'hokm_trump_diamonds'),
-      ],
-      [
-        Markup.button.callback('♣️ حکم خاج', 'hokm_trump_clubs'),
-        Markup.button.callback('♠️ حکم پیک', 'hokm_trump_spades'),
-      ],
+  // انتخاب خال حکم هم مثل بقیهٔ بازی، در گفتگوی خصوصی انجام می‌شود
+  if (session.status === 'bidding' && isHost) {
+    keyboard.push([
+      Markup.button.callback('❤️ حکم دل', 'hokm_trump_hearts'),
+      Markup.button.callback('♦️ حکم خشت', 'hokm_trump_diamonds'),
+    ]);
+    keyboard.push([
+      Markup.button.callback('♣️ حکم خاج', 'hokm_trump_clubs'),
+      Markup.button.callback('♠️ حکم پیک', 'hokm_trump_spades'),
     ]);
   }
 
   if (session.status === 'finished') {
-    return Markup.inlineKeyboard([
-      [Markup.button.callback('🔄 بازی جدید', 'hokm_new')],
-      [Markup.button.callback('🎙 منوی بازی', 'games')],
-    ]);
+    keyboard.push(
+      isHost
+        ? [Markup.button.callback('🔄 بازی جدید در گروه', 'hokm_new')]
+        : [Markup.button.callback('🂠 دوباره دیدن دست‌ها', 'hokm_resend')]
+    );
+  } else {
+    keyboard.push([Markup.button.callback('🔄 به‌روزرسانی دست', 'hokm_resend')]);
   }
 
+  return Markup.inlineKeyboard(keyboard);
+}
+
+// ─── Group keyboard (lobby) ───────────────────
+/**
+ * دکمه‌های لابیِ گروه. به‌محض شروع بازی این تخته پاک می‌شود و همهٔ بازی
+ * در گفتگوی خصوصی ادامه می‌یابد، پس این کیبورد فقط وضعیت «waiting» را می‌شناسد.
+ */
+async function buildHokmKeyboard(ctx: Context, session: HokmSession): Promise<any> {
+  const rows: any[][] = [];
+
+  if (humanCount(session) >= SEAT_COUNT) {
+    rows.push([Markup.button.callback('♟️ میز کامل است', 'hokm_wait')]);
+  } else {
+    rows.push([Markup.button.callback('🎮 نشستن روی صندلی', 'hokm_join')]);
+    rows.push([Markup.button.callback('🚪 خروج از بازی', 'hokm_leave')]);
+  }
+
+  const dmRow = await botDmRow(ctx);
+  if (dmRow) rows.push(dmRow);
+
+  rows.push([Markup.button.callback('▶️ شروع بازی', 'hokm_start')]);
+  rows.push([Markup.button.callback('❌ لغو', 'hokm_cancel')]);
+  return Markup.inlineKeyboard(rows);
+}
+
+/** دکمهٔ ورود به گفتگوی خصوصی؛ اگر ربات نام‌کاربری نداشت، حذف می‌شود */
+async function botDmRow(ctx: Context): Promise<any[] | undefined> {
+  try {
+    const me = await ctx.telegram.getMe();
+    if (!me?.username) return undefined;
+    return [Markup.button.url('🤖 گفتگوی خصوصی با ربات', `https://t.me/${me.username}`)];
+  } catch {
+    return undefined;
+  }
+}
+
+/** دکمه‌های پیام کوتاه نتیجه در گروه */
+function buildHokmResultKeyboard(): any {
   return Markup.inlineKeyboard([
-    [Markup.button.callback('🔄 به‌روزرسانی', 'hokm_resend')],
-    [Markup.button.callback('❌ لغو بازی', 'hokm_cancel')],
+    [Markup.button.callback('🔄 بازی جدید در گروه', 'hokm_new')],
+    [Markup.button.callback('🎮 منوی بازی', 'games')],
   ]);
 }
 
@@ -349,7 +451,13 @@ export async function handleHokm(ctx: Context) {
 
   const existing = sessions.get(key);
   if (existing && existing.status !== 'finished' && Date.now() - existing.createdAt < 1800000) {
-    await ctx.reply('⏳ یک بازی حکم در حال انجام است. لطفاً صبر کنید تا تمام شود.');
+    // این پیام هم در دفتر ثبت می‌شود تا در پایان بازی از گروه پاک شود
+    await sendGameMessage(
+      ctx,
+      key,
+      '⏳ یک بازی حکم در این گروه در جریان است؛ بازی در *گفتگوی خصوصی* بازیکنان ادامه دارد.',
+      { parse_mode: 'Markdown' }
+    );
     return;
   }
 
@@ -357,12 +465,7 @@ export async function handleHokm(ctx: Context) {
   const session: HokmSession = {
     chatId,
     messageId: 0,
-    players: [
-      { id: fromUser.id, name: fromUser.first_name || 'میزبان', hand: [], initialHand: [], tricks: 0, isBot: false, dmMessageId: null, dmSignature: null },
-      { id: null, name: 'بازیکن ۲', hand: [], initialHand: [], tricks: 0, isBot: false, dmMessageId: null, dmSignature: null },
-      { id: null, name: 'بازیکن ۳', hand: [], initialHand: [], tricks: 0, isBot: false, dmMessageId: null, dmSignature: null },
-      { id: null, name: 'بازیکن ۴', hand: [], initialHand: [], tricks: 0, isBot: false, dmMessageId: null, dmSignature: null },
-    ],
+    players: lobbyPlayers(fromUser.id, fromUser.first_name),
     hostId: fromUser.id,
     currentPlayer: 0,
     trumpSuit: null,
@@ -375,16 +478,17 @@ export async function handleHokm(ctx: Context) {
     notices: [],
     busy: false,
     boardSignature: null,
+    boardCleared: false,
     createdAt: Date.now(),
   };
   sessions.set(key, session);
 
-  const msg = await ctx.reply(buildHokmText(session), {
+  const messageId = await sendGameMessage(ctx, key, buildHokmText(session), {
     parse_mode: 'Markdown',
-    ...buildHokmKeyboard(session),
+    ...(await buildHokmKeyboard(ctx, session)),
   });
 
-  session.messageId = msg.message_id;
+  if (typeof messageId === 'number') session.messageId = messageId;
 }
 
 // ─── Action Handler ──────────────────────────
@@ -409,7 +513,7 @@ export async function handleHokmAction(ctx: Context) {
     }
     sessions.delete(sessionKey(session.chatId));
     await ctx.answerCbQuery('بازی لغو شد.');
-    await editGroupBoard(ctx, session, '❌ بازی حکم لغو شد.');
+    await cancelHokm(ctx, session);
     return;
   }
 
@@ -419,26 +523,30 @@ export async function handleHokmAction(ctx: Context) {
       await ctx.answerCbQuery('❌ فقط میزبان می‌تواند بازی جدید بسازد.');
       return;
     }
-    session.players = [
-      { id: session.hostId, name: 'میزبان', hand: [], initialHand: [], tricks: 0, isBot: false, dmMessageId: null, dmSignature: null },
-      { id: null, name: 'بازیکن ۲', hand: [], initialHand: [], tricks: 0, isBot: false, dmMessageId: null, dmSignature: null },
-      { id: null, name: 'بازیکن ۳', hand: [], initialHand: [], tricks: 0, isBot: false, dmMessageId: null, dmSignature: null },
-      { id: null, name: 'بازیکن ۴', hand: [], initialHand: [], tricks: 0, isBot: false, dmMessageId: null, dmSignature: null },
-    ];
-    session.trumpSuit = null;
-    session.rulerSeat = 0;
-    session.currentPlayer = 0;
-    session.currentTrick = emptyTrick();
-    session.teamScores = [0, 0];
-    session.lastWinnerSeat = null;
-    session.result = null;
-    session.notices = [];
-    session.busy = false;
-    session.boardSignature = null;
-    session.status = 'waiting';
 
-    await ctx.answerCbQuery('🔄 بازی جدید آماده شد!');
-    await syncAll(ctx, session);
+    const key = sessionKey(session.chatId);
+    resetHokmSession(session);
+
+    // لابیٔ تازه = پیام *جدید* در گروه؛ پیام نتیجهٔ قبلی کمی بعد خودش پاک می‌شود
+    const messageId = await postGameMessage(
+      ctx.telegram,
+      key,
+      session.chatId,
+      buildHokmText(session),
+      { parse_mode: 'Markdown', ...(await buildHokmKeyboard(ctx, session)) }
+    );
+
+    if (typeof messageId === 'number') {
+      session.messageId = messageId;
+      session.boardCleared = false;
+    } else {
+      // ارسال نشد → اگر تختهٔ قبلی هنوز هست، همان را لابی کن
+      session.boardCleared = false;
+      session.boardSignature = null;
+      await editGroupBoard(ctx, session);
+    }
+
+    await ctx.answerCbQuery('🔄 لابیٔ تازه در گروه باز شد!');
     return;
   }
 
@@ -465,10 +573,9 @@ export async function handleHokmAction(ctx: Context) {
     // دست بازیکن باید در گفتگوی خصوصی دریافت شود ⇒ اول DM تست می‌شود
     if (!(await verifyPrivateChannel(ctx, userId))) {
       await ctx.answerCbQuery(
-        '❌ اول باید در گفتگوی خصوصی با ربات گفتگو کنید (دکمهٔ «🤖 گفتگوی خصوصی» در همین پیام).',
+        '❌ اول باید در گفتگوی خصوصی با ربات گفتگو کنید (دکمهٔ «🤖 گفتگوی خصوصی با ربات» در همین پیام).',
         { show_alert: true }
       );
-      await addPrivateChatButton(ctx, session);
       return;
     }
 
@@ -558,6 +665,8 @@ export async function handleHokmAction(ctx: Context) {
       }
     }
 
+    // به‌محض شروع، تختهٔ گروه پاک می‌شود؛ ادامهٔ بازی فقط در گفتگوی خصوصی
+    await clearGroupBoard(ctx, session);
     await ctx.answerCbQuery('🎴 کارت‌ها پخش شد! خال حکم را انتخاب کنید.');
     await syncAll(ctx, session);
     return;
@@ -704,28 +813,6 @@ async function sendPrivateHand(ctx: Context, session: HokmSession, seat: number)
   }
 }
 
-async function addPrivateChatButton(ctx: Context, session: HokmSession): Promise<void> {
-  try {
-    const me = await ctx.telegram.getMe();
-    const rows: any[][] = [];
-    if (humanCount(session) < SEAT_COUNT) {
-      rows.push([Markup.button.callback('🎮 نشستن روی صندلی', 'hokm_join')]);
-    }
-    rows.push([Markup.button.url('🤖 گفتگوی خصوصی با ربات', `https://t.me/${me.username}`)]);
-    rows.push([Markup.button.callback('▶️ شروع بازی', 'hokm_start')]);
-    rows.push([Markup.button.callback('❌ لغو', 'hokm_cancel')]);
-
-    await ctx.telegram.editMessageText(
-      session.chatId.toString(),
-      session.messageId,
-      undefined,
-      buildHokmText(session),
-      { parse_mode: 'Markdown', ...Markup.inlineKeyboard(rows) }
-    );
-    session.boardSignature = null;
-  } catch {}
-}
-
 // ─── Game flow ───────────────────────────────
 /** نشاندن بازیکنان واقعی روی صندلی‌ها (۰ = میزبان) و پر کردن بقیه با ربات */
 function seatPlayers(session: HokmSession): void {
@@ -815,7 +902,7 @@ async function completeTrick(ctx: Context, session: HokmSession) {
     session.result = { winnerTeam: team, kot, su };
 
     await awardHokmPoints(ctx, session);
-    await syncAll(ctx, session);
+    await finishHokm(ctx, session);
     return;
   }
 
@@ -858,10 +945,189 @@ async function awardHokmPoints(ctx: Context, session: HokmSession) {
   }
 }
 
+// ─── PV migration & group cleanup ─────────────
+/**
+ * لابیِ گروه را پاک می‌کند.
+ * به‌محض شروع بازی، هیچ پیامی از حکم در گروه نمی‌ماند: انتخاب حکم، کارت‌ها،
+ * نوبت‌ها و افشای دست‌ها همه در گفتگوی خصوصیِ هر بازیکن با ربات است.
+ * اگر ربات اجازهٔ حذف پیام را نداشته باشد، همان تخته به یک یادآوریِ کوتاه
+ * تبدیل می‌شود و دکمه‌هایش بسته می‌گردد تا کسی روی تختهٔ مرده کلیک نکند.
+ * true یعنی گروه واقعاً تمیز شد.
+ */
+async function clearGroupBoard(ctx: Context, session: HokmSession): Promise<boolean> {
+  if (session.boardCleared) return session.messageId === 0;
+  session.boardCleared = true;
+  if (!session.messageId) return true;
+
+  const removed = await deleteGameMessage(
+    ctx.telegram,
+    sessionKey(session.chatId),
+    session.chatId,
+    session.messageId
+  );
+  if (removed) {
+    session.messageId = 0;
+    return true;
+  }
+
+  try {
+    await ctx.telegram.editMessageText(
+      session.chatId.toString(),
+      session.messageId,
+      undefined,
+      '🔒 بازی *حکم* در *گفتگوی خصوصی* با ربات ادامه دارد.\n\nکارت‌ها، نوبت و نتیجه را همان‌جا می‌بینید.',
+      { parse_mode: 'Markdown' }
+    );
+    await ctx.telegram.editMessageReplyMarkup(
+      session.chatId.toString(),
+      session.messageId,
+      undefined,
+      undefined
+    );
+  } catch {}
+  return false;
+}
+
+/** پایان بازی: افشای دست‌ها در PV + یک پیامِ کوتاه نتیجه در گروه + زمان‌بندی پاک‌سازی */
+async function finishHokm(ctx: Context, session: HokmSession): Promise<void> {
+  for (let seat = 0; seat < SEAT_COUNT; seat++) {
+    const player = session.players[seat];
+    if (player.isBot || !player.id) continue;
+    await sendPrivateHand(ctx, session, seat);
+  }
+
+  await announceHokmResult(ctx, session);
+  void purgeGameMessages(ctx.telegram, sessionKey(session.chatId), GAME_RESULT_PURGE_DELAY_MS);
+}
+
+/**
+ * پیام کوتاه نتیجه در گروه.
+ * اگر تختهٔ گروه حذف شدنی نبود، همان پیام به نتیجه تبدیل می‌شود تا گروه
+ * بیش از یک پیام برای هر بازی نداشته باشد.
+ */
+async function announceHokmResult(ctx: Context, session: HokmSession): Promise<void> {
+  const key = sessionKey(session.chatId);
+  const text = buildHokmResultText(session);
+  const extra = { parse_mode: 'Markdown', ...buildHokmResultKeyboard() };
+  const boardSurvived = !(await clearGroupBoard(ctx, session));
+
+  if (boardSurvived && session.messageId) {
+    try {
+      await ctx.telegram.editMessageText(
+        session.chatId.toString(),
+        session.messageId,
+        undefined,
+        text,
+        extra
+      );
+      trackGameMessage(key, session.chatId, session.messageId, ctx.telegram);
+      return;
+    } catch {}
+  }
+
+  const messageId = await postGameMessage(ctx.telegram, key, session.chatId, text, extra);
+  if (typeof messageId === 'number') session.messageId = messageId;
+}
+
+/** متن پیامِ نتیجه در گروه — بدون افشای کارت‌ها (دست‌ها فقط در PV بازیکنان باز می‌شود) */
+function buildHokmResultText(session: HokmSession): string {
+  const result = session.result;
+  if (!result) return '🃏 بازی حکم تمام شد.';
+
+  const points = result.kot ? 120 : result.su ? 100 : 60;
+  const otherTeam = result.winnerTeam === 0 ? 1 : 0;
+  const winners = [0, 1, 2, 3]
+    .filter((seat) => teamOf(seat) === result.winnerTeam)
+    .map((seat) => playerName(session.players[seat], false))
+    .join(' و ');
+
+  const lines: string[] = [];
+  lines.push('🏁 *حکم تمام شد*');
+  lines.push('');
+  lines.push(`🏆 تیم برنده: ${winners}`);
+  lines.push(
+    `📊 تریک: تیم برنده ${session.teamScores[result.winnerTeam]} — تیم دیگر ${session.teamScores[otherTeam]}`
+  );
+  if (result.kot) lines.push('🃏 *کوت!* تیم باختی هیچ تریکی نگرفت.');
+  if (result.su) lines.push('🎊 *سو!* یک بازیکن هر ۱۳ تریک را گرفت.');
+  lines.push(`⭐️ ${points} امتیاز برای تیم برنده`);
+  lines.push('');
+  lines.push('🔒 دست‌ها در گفتگوی خصوصی بازیکنان افشا شد.');
+  lines.push('🧹 این پیام کمی بعد از گروه پاک می‌شود.');
+  return lines.join('\n');
+}
+
+/**
+ * لغو بازی: تختهٔ گروه جای خود پیام «لغو شد» را می‌گیرد و خیلی زود پاک می‌شود؛
+ * پیام‌های خصوصی هم بسته می‌شوند تا دکمهٔ مرده‌ای باقی نماند.
+ */
+async function cancelHokm(ctx: Context, session: HokmSession): Promise<void> {
+  const key = sessionKey(session.chatId);
+
+  if (!session.boardCleared && session.messageId) {
+    try {
+      await ctx.telegram.editMessageText(
+        session.chatId.toString(),
+        session.messageId,
+        undefined,
+        '❌ بازی حکم لغو شد.',
+        { parse_mode: 'Markdown' }
+      );
+      await ctx.telegram.editMessageReplyMarkup(
+        session.chatId.toString(),
+        session.messageId,
+        undefined,
+        undefined
+      );
+    } catch {}
+  }
+
+  void purgeGameMessages(ctx.telegram, key, GAME_CANCEL_PURGE_DELAY_MS);
+
+  for (const player of session.players) {
+    if (player.isBot || !player.id || !player.dmMessageId) continue;
+    try {
+      await ctx.telegram.editMessageText(
+        player.id.toString(),
+        player.dmMessageId,
+        undefined,
+        '❌ *بازی حکم لغو شد.*\n\nبرای بازی دوباره، در گروه دکمهٔ «🃏 حکم» را بزنید.',
+        { parse_mode: 'Markdown' }
+      );
+      await ctx.telegram.editMessageReplyMarkup(
+        player.id.toString(),
+        player.dmMessageId,
+        undefined,
+        undefined
+      );
+    } catch {}
+  }
+}
+
+/** آماده‌سازی لابیِ تازه روی همان session (دکمهٔ «🔄 بازی جدید در گروه») */
+function resetHokmSession(session: HokmSession): void {
+  const hostName = session.players.find((p) => p.id === session.hostId)?.name;
+  session.players = lobbyPlayers(session.hostId, hostName);
+  session.trumpSuit = null;
+  session.rulerSeat = 0;
+  session.currentPlayer = 0;
+  session.currentTrick = emptyTrick();
+  session.teamScores = [0, 0];
+  session.lastWinnerSeat = null;
+  session.result = null;
+  session.notices = [];
+  session.busy = false;
+  session.boardSignature = null;
+  session.status = 'waiting';
+  session.createdAt = Date.now();
+}
+
 // ─── Rendering ────────────────────────────────
 /** به‌روزرسانی میز بازی (گروه) و دست‌های خصوصی همهٔ بازیکنان */
 async function syncAll(ctx: Context, session: HokmSession): Promise<void> {
   await editGroupBoard(ctx, session);
+  // تا لابی بسته نشده، دست کسی فرستاده نمی‌شود (کارت‌ها در شروع پخش می‌شوند)
+  if (session.status === 'waiting') return;
   for (let seat = 0; seat < SEAT_COUNT; seat++) {
     const player = session.players[seat];
     if (player.isBot || !player.id) continue;
@@ -874,8 +1140,11 @@ async function editGroupBoard(
   session: HokmSession,
   overrideText?: string
 ): Promise<void> {
+  // تخته پاک شده → دیگر پیامی به گروه نمی‌رود (مگر با متن اجباریِ فراخوان)
+  if (session.boardCleared && !overrideText) return;
+
   const text = overrideText ?? buildHokmText(session);
-  const keyboard = buildHokmKeyboard(session);
+  const keyboard = await buildHokmKeyboard(ctx, session);
   const signature = text + JSON.stringify(keyboard.reply_markup);
 
   // اگر متن و دکمه‌ها تغییری نکرده‌اند، دوباره ویرایش نفرست

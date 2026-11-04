@@ -124,6 +124,66 @@ const REQUIRED_DEFAULTS: Array<{
     type: "NUMBER",
     description: "طول کلمه در بازی کلمه‌یاب (۴ تا ۸)",
   },
+  {
+    key: "game_mench_enabled",
+    value: "true",
+    type: "BOOLEAN",
+    description: "بازی منچ فعال",
+  },
+  {
+    key: "game_scala_enabled",
+    value: "true",
+    type: "BOOLEAN",
+    description: "بازی اسکالا فعال",
+  },
+  {
+    key: 'music_enabled',
+    value: 'true',
+    type: 'BOOLEAN',
+    description: 'پخش موزیک در گروه فعال',
+  },
+  {
+    key: 'music_user_songs',
+    value: 'true',
+    type: 'BOOLEAN',
+    description: 'کاربران بتوانند با فرستادن آهنگ در گروه، آن را به کتابخانه اضافه کنند',
+  },
+  {
+    key: 'music_max_mb',
+    value: '25',
+    type: 'NUMBER',
+    description: 'حداکثر حجم آهنگ آپلودی از پنل (مگابایت)',
+  },
+  {
+    key: 'music_voice_enabled',
+    value: 'false',
+    type: 'BOOLEAN',
+    description: 'پخش آهنگ در ویس‌کال گروه‌ها فعال شود (نیازمند حساب تلگرام در بخش موزیک پنل)',
+  },
+  {
+    key: 'music_voice_default_mode',
+    value: 'chat',
+    type: 'STRING',
+    description: 'حالت پیش‌فرض پخش در گروه‌ها: chat (پیام صوتی در چت) یا voice (ویس‌کال)',
+  },
+  {
+    key: 'music_voice_auto_start',
+    value: 'true',
+    type: 'BOOLEAN',
+    description: 'حساب تلگرام خودش ویس‌کال گروه را باز کند (اگر خاموش باشد فقط وقتی گروه در ویس‌کال باشد پخش می‌شود)',
+  },
+  {
+    key: 'music_voice_max_streams',
+    value: '5',
+    type: 'NUMBER',
+    description: 'سقف پخش هم‌زمان آهنگ در ویس‌کال روی سرور',
+  },
+  {
+    key: 'music_voice_quality',
+    value: 'high',
+    type: 'STRING',
+    description: 'کیفیت صدای استریم: low، medium، high یا studio',
+  },
 ];
 
 export async function ensureDefaultSettings(): Promise<void> {

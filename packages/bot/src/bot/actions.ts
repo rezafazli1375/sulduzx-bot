@@ -14,6 +14,7 @@ import { mainMenuKeyboard } from '../lib/ui.js';
 import { getBotId } from '../lib/bot-context.js';
 import { findUserByCtx } from '../lib/user.js';
 import { handleGameAction, handleGameCheckMembership } from './games/index.js';
+import { handleMusicAction } from './music.js';
 
 export function setupActionHandlers(bot: Telegraf) {
   bot.action('main_menu', async (ctx) => {
@@ -146,6 +147,14 @@ export function setupActionHandlers(bot: Telegraf) {
     await handleGameAction(ctx);
   });
 
+  bot.action('game_mench', async (ctx) => {
+    await handleGameAction(ctx);
+  });
+
+  bot.action('game_scala', async (ctx) => {
+    await handleGameAction(ctx);
+  });
+
 
   bot.action('game_check_membership', async (ctx) => {
     await handleGameCheckMembership(ctx);
@@ -205,6 +214,21 @@ export function setupActionHandlers(bot: Telegraf) {
   // Hokm actions
   bot.action(/^hokm_/, async (ctx) => {
     await handleGameAction(ctx);
+  });
+
+  // Mench actions
+  bot.action(/^mench_/, async (ctx) => {
+    await handleGameAction(ctx);
+  });
+
+  // Scala actions
+  bot.action(/^scala_/, async (ctx) => {
+    await handleGameAction(ctx);
+  });
+
+  // Music player (کارت پخش گروه)
+  bot.action(/^music:/, async (ctx) => {
+    await handleMusicAction(ctx);
   });
 
 }

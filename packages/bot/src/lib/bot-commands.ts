@@ -20,7 +20,13 @@ export const GROUP_COMMANDS = [
   { command: 'dooz', description: 'شروع بازی دوز' },
   { command: 'kalame', description: 'شروع بازی کلمه‌یاب' },
   { command: 'hokm', description: 'شروع بازی حکم' },
+  { command: 'mench', description: 'شروع بازی منچ' },
+  { command: 'scala', description: 'شروع بازی اسکالا' },
   { command: 'joraat', description: 'شروع جرعت و حقیقت' },
+  { command: 'music', description: 'پخش‌کننده موزیک در گروه' },
+  { command: 'play', description: 'پخش تصادفی یک آهنگ' },
+  { command: 'next', description: 'آهنگ بعدی' },
+  { command: 'stop', description: 'توقف پخش موزیک' },
 ];
 
 // Register for the default (language-less) list plus fa/en explicitly.

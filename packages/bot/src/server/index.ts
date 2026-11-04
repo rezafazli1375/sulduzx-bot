@@ -18,6 +18,8 @@ import { accountRouter } from './routes/account.js';
 import { configsRouter } from './routes/configs.js';
 import { ytdlpRouter } from './routes/ytdlp.js';
 import { gamesRouter } from './routes/games.js';
+import { musicRouter } from './routes/music.js';
+import { voiceRouter } from './routes/voice.js';
 import { authenticateToken } from './middleware/auth.js';
 
 export function startServer() {
@@ -25,7 +27,8 @@ export function startServer() {
   const port = parseInt(process.env.PORT || '3000', 10);
 
   app.use(cors());
-  app.use(express.json({ limit: '30mb' }));
+  // محدودیت بالاتر برای آپلود آهنگ (base64) در بخش موزیک پنل
+  app.use(express.json({ limit: '45mb' }));
 
   app.use('/api/auth', authRouter);
   app.get('/api/health', (_req, res) => {
@@ -49,6 +52,8 @@ export function startServer() {
   app.use('/api/configs', configsRouter);
   app.use('/api/ytdlp', ytdlpRouter);
   app.use('/api/games', gamesRouter);
+  app.use('/api/music', musicRouter);
+  app.use('/api/voice', voiceRouter);
 
   app.listen(port, () => {
     console.log(`Admin API server running on http://localhost:${port}`);

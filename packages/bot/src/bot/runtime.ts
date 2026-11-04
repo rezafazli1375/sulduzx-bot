@@ -4,6 +4,7 @@ import { prisma } from '../lib/prisma.js';
 import { getSetting, getSettingBool } from '../lib/settings.js';
 import { generateReferralCode } from '../lib/utils.js';
 import { getBotId } from '../lib/bot-context.js';
+import { syncMyChatMember, touchGroup } from '../lib/chats.js';
 import { findUserByCtx, telegramIdOf } from '../lib/user.js';
 import { getText } from '../lib/texts.js';
 import { mainMenuKeyboard } from '../lib/ui.js';
@@ -11,6 +12,7 @@ import { handleStart } from './start.js';
 import { handleMenu } from './menu.js';
 import { handleGames, handleGameCommand } from './games/index.js';
 import { handleWordleText } from './games/wordle.js';
+import { handleMusicAudio, handleMusicCommand } from './music.js';
 import { handleFreeConfig } from './free-config.js';
 import { handleProxy } from './proxy.js';
 import { handleReferral } from './referral.js';
@@ -30,7 +32,7 @@ import { registerFeatureGuard } from '../lib/restrictions.js';
 import { GROUP_COMMANDS } from '../lib/bot-commands.js';
 import type { DirectGameKey } from './games/index.js';
 
-// Commands allowed inside groups: /start, /games + direct game launchers.
+// Commands allowed inside groups: /start, /games + game commands and music.
 const GROUP_ALLOWED_COMMANDS = new Set([
   '/start',
   '/games',
@@ -39,6 +41,12 @@ const GROUP_ALLOWED_COMMANDS = new Set([
   '/kalame',
   '/hokm',
   '/joraat',
+  '/mench',
+  '/scala',
+  '/music',
+  '/play',
+  '/next',
+  '/stop',
 ]);
 
 const DIRECT_GAME_COMMANDS: Array<[string, DirectGameKey]> = [
@@ -47,6 +55,8 @@ const DIRECT_GAME_COMMANDS: Array<[string, DirectGameKey]> = [
   ['kalame', 'wordle'],
   ['hokm', 'hokm'],
   ['joraat', 'truth_or_dare'],
+  ['mench', 'mench'],
+  ['scala', 'scala'],
 ];
 
 // ─── Channel Membership Check ────────────────
@@ -129,6 +139,13 @@ export function createBotInstance(botId: number, token: string): Telegraf {
     return next();
   });
 
+  // ─── حضور ربات در گروه‌ها را ثبت می‌کند (برای آمار و پیام به گروه‌ها) ───
+  bot.use(async (ctx, next) => {
+    await syncMyChatMember(ctx);
+    await touchGroup(ctx);
+    return next();
+  });
+
   // ─── Group Restriction: /start, /games + game commands only ────
   bot.use(async (ctx, next) => {
     const chatType = ctx.chat?.type;
@@ -156,6 +173,8 @@ export function createBotInstance(botId: number, token: string): Telegraf {
         const handled = await handleWordleText(ctx, text);
         if (handled) return;
       }
+      // موزیک: کاربر آهنگ می‌فرستد و در کپشن می‌گوید «پخش» (یا /play)
+      if (await handleMusicAudio(ctx)) return;
       // Ignore non-command messages in groups
       return;
     }
@@ -283,6 +302,21 @@ export function createBotInstance(botId: number, token: string): Telegraf {
       const user = await getUser(ctx);
       if (!user) return;
       await handleGameCommand(ctx, game);
+    });
+  }
+
+  // موزیک در گروه: /music (کارت پخش)، /play (تصادفی)، /next، /stop
+  const MUSIC_COMMANDS: Array<[string, 'card' | 'play' | 'next' | 'stop']> = [
+    ['music', 'card'],
+    ['play', 'play'],
+    ['next', 'next'],
+    ['stop', 'stop'],
+  ];
+  for (const [command, action] of MUSIC_COMMANDS) {
+    bot.command(command, async (ctx) => {
+      const user = await getUser(ctx);
+      if (!user) return;
+      await handleMusicCommand(ctx, action);
     });
   }
 
