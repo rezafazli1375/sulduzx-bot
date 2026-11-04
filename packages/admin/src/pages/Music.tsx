@@ -15,7 +15,6 @@ import {
   Headphones,
 } from 'lucide-react';
 import { formatDateTime } from '../lib/features';
-import VoiceCallPanel from '../components/VoiceCallPanel';
 
 const MAX_UPLOAD_MB = 20;
 
@@ -33,12 +32,6 @@ function formatSize(bytes?: number | null): string {
   return `${Math.max(1, Math.round(bytes / 1024))} کیلوبایت`;
 }
 
-const KIND_LABEL: Record<string, string> = {
-  audio: '🎵 آهنگ',
-  document: '📄 فایل MP3',
-  voice: '🎙 ویس',
-};
-
 const SOURCE_LABEL: Record<string, string> = {
   panel: 'آپلود پنل',
   group: 'ارسالی کاربر',
@@ -47,34 +40,29 @@ const SOURCE_LABEL: Record<string, string> = {
 export default function Music() {
   const [tracks, setTracks] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
-  const [bots, setBots] = useState<any[]>([]);
-  const [botId, setBotId] = useState('');
+  const [groups, setGroups] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [playing, setPlaying] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
   const [file, setFile] = useState<File | null>(null);
-
-  useEffect(() => {
-    axios
-      .get('/api/bots')
-      .then((res) => setBots(res.data ?? []))
-      .catch((err) => console.error('Load bots error:', err));
-  }, []);
+  const [playTrackId, setPlayTrackId] = useState('');
+  const [playChatId, setPlayChatId] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const params: any = {};
-      if (botId) params.botId = botId;
-      const [listRes, statsRes] = await Promise.all([
-        axios.get('/api/music', { params }),
+      const [listRes, statsRes, groupsRes] = await Promise.all([
+        axios.get('/api/music'),
         axios.get('/api/music/stats'),
+        axios.get('/api/music/groups'),
       ]);
       setTracks(listRes.data.tracks ?? []);
       setStats(statsRes.data);
+      setGroups(groupsRes.data.groups ?? []);
       setError('');
     } catch (err: any) {
       console.error('Load music error:', err);
@@ -82,7 +70,7 @@ export default function Music() {
     } finally {
       setLoading(false);
     }
-  }, [botId]);
+  }, []);
 
   useEffect(() => {
     load();
@@ -95,10 +83,6 @@ export default function Music() {
 
   const handleUpload = async () => {
     setError('');
-    if (!botId) {
-      setError('ابتدا ربات را انتخاب کنید');
-      return;
-    }
     if (!file) {
       setError('فایل آهنگ را انتخاب کنید');
       return;
@@ -118,7 +102,6 @@ export default function Music() {
       });
 
       await axios.post('/api/music', {
-        botId: parseInt(botId, 10),
         title: title.trim() || file.name,
         artist: artist.trim() || undefined,
         fileName: file.name,
@@ -131,7 +114,7 @@ export default function Music() {
       setFile(null);
       const input = document.getElementById('music-file') as HTMLInputElement | null;
       if (input) input.value = '';
-      flash('✅ آهنگ به کتابخانه اضافه شد');
+      flash('✅ آهنگ به کتابخانهٔ مشترک اضافه شد');
       await load();
     } catch (err: any) {
       setError(err.response?.data?.error || 'خطا در آپلود آهنگ');
@@ -163,12 +146,34 @@ export default function Music() {
     }
   };
 
+  /** پخش آزمایشی: همان کاری که دستور /play در گروه می‌کند، ولی با آهنگ دلخواه */
+  const handlePlay = async () => {
+    setError('');
+    if (!playTrackId || !playChatId) {
+      setError('هم آهنگ و هم گروه را انتخاب کنید');
+      return;
+    }
+    setPlaying(true);
+    try {
+      await axios.post(`/api/music/${playTrackId}/play`, { chatId: playChatId });
+      const track = tracks.find((item) => String(item.id) === playTrackId);
+      flash(`✅ «${track?.title || 'آهنگ'}» به‌شکل ویس در گروه فرستاده شد`);
+      await load();
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'پخش آهنگ در گروه ناموفق بود');
+    } finally {
+      setPlaying(false);
+    }
+  };
+
   const statCards = [
     { label: 'کل آهنگ‌ها', value: stats?.totalTracks ?? 0, icon: Music2 },
     { label: 'آهنگ‌های فعال', value: stats?.activeTracks ?? 0, icon: Headphones },
     { label: 'کل پخش‌ها', value: stats?.totalPlays ?? 0, icon: PlayCircle },
     { label: 'پخش امروز', value: stats?.playsToday ?? 0, icon: MusicIcon },
   ];
+
+  const activeTracks = tracks.filter((track) => track.isActive);
 
   return (
     <div className="space-y-6">
@@ -181,31 +186,17 @@ export default function Music() {
             موزیک
           </h1>
           <p className="text-gray-500 mt-2">
-            کتابخانهٔ آهنگ‌هایی که ربات در گروه‌ها پخش می‌کند
+            کتابخانهٔ مشترک آهنگ‌ها — همهٔ ربات‌های ثبت‌شده از همین فهرست پخش می‌کنند
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <select
-            value={botId}
-            onChange={(e) => setBotId(e.target.value)}
-            className="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-fuchsia-500 outline-none"
-          >
-            <option value="">همهٔ ربات‌ها</option>
-            {bots.map((bot) => (
-              <option key={bot.id} value={bot.id}>
-                {bot.name}
-              </option>
-            ))}
-          </select>
-          <button
-            onClick={load}
-            className="btn-secondary flex items-center gap-2"
-            disabled={loading}
-          >
-            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-            بروزرسانی
-          </button>
-        </div>
+        <button
+          onClick={load}
+          className="btn-secondary flex items-center gap-2"
+          disabled={loading}
+        >
+          <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+          بروزرسانی
+        </button>
       </div>
 
       {/* آمار */}
@@ -244,6 +235,7 @@ export default function Music() {
                 <tr>
                   <th className="text-right font-medium py-2">آهنگ</th>
                   <th className="text-right font-medium py-2">گروه</th>
+                  <th className="text-right font-medium py-2">ربات</th>
                   <th className="text-right font-medium py-2">درخواست‌کننده</th>
                   <th className="text-right font-medium py-2">شروع</th>
                 </tr>
@@ -256,6 +248,7 @@ export default function Music() {
                       {play.artist ? <span className="text-gray-500 font-normal"> — {play.artist}</span> : null}
                     </td>
                     <td className="py-2.5 text-gray-700">{play.groupTitle}</td>
+                    <td className="py-2.5 text-gray-700">{play.botName || `#${play.botId}`}</td>
                     <td className="py-2.5 text-gray-700">{play.requestName || '—'}</td>
                     <td className="py-2.5 text-gray-500">{formatDateTime(play.startedAt)}</td>
                   </tr>
@@ -265,9 +258,6 @@ export default function Music() {
           </div>
         )}
       </div>
-
-      {/* حساب ویس‌کال و حالت پخش گروه‌ها */}
-      <VoiceCallPanel tracks={tracks} onNotice={flash} />
 
       {notice && (
         <div className="card bg-green-50 border-green-200 flex items-center gap-3">
@@ -293,24 +283,9 @@ export default function Music() {
       <div className="card">
         <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2 mb-4">
           <Upload size={20} className="text-fuchsia-500" />
-          افزودن آهنگ
+          افزودن آهنگ به کتابخانهٔ مشترک
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">ربات</label>
-            <select
-              value={botId}
-              onChange={(e) => setBotId(e.target.value)}
-              className="input-field"
-            >
-              <option value="">انتخاب کنید…</option>
-              {bots.map((bot) => (
-                <option key={bot.id} value={bot.id}>
-                  {bot.name}
-                </option>
-              ))}
-            </select>
-          </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">نام آهنگ</label>
             <input
@@ -331,7 +306,7 @@ export default function Music() {
               dir="rtl"
             />
           </div>
-          <div className="md:col-span-2">
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               فایل آهنگ (mp3 تا {MAX_UPLOAD_MB} مگابایت)
             </label>
@@ -352,11 +327,11 @@ export default function Music() {
               </p>
             )}
           </div>
-          <div className="flex items-end">
+          <div className="md:col-span-3">
             <button
               onClick={handleUpload}
-              disabled={uploading || !file || !botId}
-              className="btn-primary w-full flex items-center justify-center gap-2 disabled:opacity-50"
+              disabled={uploading || !file}
+              className="btn-primary w-full md:w-auto flex items-center justify-center gap-2 disabled:opacity-50"
             >
               {uploading ? (
                 <>
@@ -374,6 +349,79 @@ export default function Music() {
         </div>
       </div>
 
+      {/* پخش در گروه */}
+      <div className="card" id="music-play-card">
+        <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2 mb-2">
+          <PlayCircle size={20} className="text-fuchsia-500" />
+          پخش در گروه
+        </h2>
+        <p className="text-xs text-gray-500 mb-4 leading-6">
+          آهنگ انتخابی به‌شکل <b>ویس</b> در گروه فرستاده می‌شود؛ خط اول کپشن نام آهنگ و خط دوم
+          آیدی خودِ ربات است. پیام متنی یا دکمه‌ای اضافه نمی‌شود.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">آهنگ</label>
+            <select
+              value={playTrackId}
+              onChange={(e) => setPlayTrackId(e.target.value)}
+              className="input-field"
+            >
+              <option value="">انتخاب آهنگ…</option>
+              {activeTracks.map((track) => (
+                <option key={track.id} value={track.id}>
+                  {track.title}
+                  {track.artist ? ` — ${track.artist}` : ''}
+                  {track.hasLocalFile ? '' : ' (فایل نیست)'}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">گروه</label>
+            <select
+              value={playChatId}
+              onChange={(e) => setPlayChatId(e.target.value)}
+              className="input-field"
+            >
+              <option value="">انتخاب گروه…</option>
+              {groups.map((group) => (
+                <option key={`${group.botId}:${group.chatId}`} value={group.chatId}>
+                  {group.title || group.chatId}
+                  {group.botName ? ` — ${group.botName}` : ''}
+                  {group.memberCount ? ` (${group.memberCount} عضو)` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-end">
+            <button
+              onClick={handlePlay}
+              disabled={playing || !playTrackId || !playChatId}
+              className="btn-primary w-full flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {playing ? (
+                <>
+                  <Loader2 size={18} className="animate-spin" />
+                  در حال پخش...
+                </>
+              ) : (
+                <>
+                  <PlayCircle size={18} />
+                  ارسال ویس در گروه
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+        {groups.length === 0 && (
+          <p className="text-xs text-amber-700 mt-3">
+            گروهی در دسترس نیست؛ ربات باید حداقل یک پیام از گروه ببیند (مثلاً با /start در گروه
+            یا افزودن ربات به گروه) تا اینجا بیاید.
+          </p>
+        )}
+      </div>
+
       {/* فهرست آهنگ‌ها */}
       <div className="card">
         <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2 mb-4">
@@ -387,7 +435,7 @@ export default function Music() {
         ) : tracks.length === 0 ? (
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
             کتابخانه خالی است. از بخش بالا آهنگ آپلود کنید؛ یا در گروه، فایل آهنگ را بفرستید و
-            در کپشن بنویسید «پخش» تا ربات آن را حفظ کند.
+            در کپشن بنویسید «پخش» تا ربات آن را در همین کتابخانهٔ مشترک حفظ کند.
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -395,7 +443,6 @@ export default function Music() {
               <thead className="text-gray-500">
                 <tr>
                   <th className="text-right font-medium py-2">آهنگ</th>
-                  <th className="text-right font-medium py-2">ربات</th>
                   <th className="text-right font-medium py-2">منبع</th>
                   <th className="text-right font-medium py-2">مدت</th>
                   <th className="text-right font-medium py-2">حجم</th>
@@ -410,12 +457,10 @@ export default function Music() {
                     <td className="py-2.5">
                       <p className="font-bold text-gray-900">{track.title}</p>
                       {track.artist && <p className="text-xs text-gray-500">{track.artist}</p>}
-                      <p className="text-[11px] text-gray-400">
-                        {KIND_LABEL[track.kind] ?? track.kind}
-                        {!track.hasFileId && !track.hasLocalFile && ' · فایل در دسترس نیست'}
-                      </p>
+                      {!track.hasLocalFile && (
+                        <p className="text-[11px] text-red-600">فایل روی سرور نیست</p>
+                      )}
                     </td>
-                    <td className="py-2.5 text-gray-700">{track.botName ?? `#${track.botId}`}</td>
                     <td className="py-2.5 text-gray-700">
                       {SOURCE_LABEL[track.source] ?? track.source}
                     </td>
@@ -435,6 +480,19 @@ export default function Music() {
                     </td>
                     <td className="py-2.5">
                       <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setPlayTrackId(String(track.id));
+                            document
+                              .getElementById('music-play-card')
+                              ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                          }}
+                          className="btn-secondary text-xs py-1 px-2 flex items-center gap-1"
+                          title="انتخاب برای پخش در گروه"
+                        >
+                          <PlayCircle size={14} />
+                          پخش
+                        </button>
                         <button
                           onClick={() => toggleActive(track)}
                           className="btn-secondary text-xs py-1 px-2 flex items-center gap-1"
@@ -466,12 +524,13 @@ export default function Music() {
           راهنما
         </h3>
         <ul className="text-sm text-blue-700 space-y-1 list-disc list-inside">
-          <li>در گروه دستور <b dir="ltr">/music</b> را بفرستید تا کارت پخش با دکمه‌های «🔀 آهنگ بعدی» و «⏹ توقف» ساخته شود.</li>
-          <li><b dir="ltr">/play</b> یک آهنگ را به‌صورت تصادفی از همین کتابخانه پخش می‌کند.</li>
-          <li>هر کاربری می‌تواند آهنگی را در گروه بفرستد و در کپشن بنویسد «پخش»؛ ربات آن را در کتابخانه حفظ می‌کند.</li>
-          <li>وقتی آهنگ قطع شود، پیام‌های ربات ۱۰ ثانیه بعد از گروه پاک می‌شوند.</li>
-          <li>آهنگ‌های غیرفعال در انتخاب تصادفی نمی‌آیند و در گروه قابل پخش نیستند.</li>
-          <li>حداکثر حجم آپلود {MAX_UPLOAD_MB} مگابایت است (تنظیم <b dir="ltr">music_max_mb</b> در بخش تنظیمات).</li>
+          <li>در گروه دستور <b dir="ltr">/play</b> یا <b dir="ltr">/music</b> را بفرستید؛ ربات یک آهنگ <b>تصادفی</b> از همین کتابخانه به‌شکل <b>ویس</b> می‌فرستد.</li>
+          <li>روی همان ویس دو خط نوشته می‌شود: نام آهنگ و آیدی خودِ ربات. پیام متنی، دکمهٔ «آهنگ بعدی» یا «توقف» ارسال نمی‌شود.</li>
+          <li>هر کاربری می‌تواند آهنگی را در گروه بفرستد و در کپشن بنویسد «پخش»؛ ربات آن را در کتابخانهٔ مشترک حفظ و همان لحظه پخش می‌کند.</li>
+          <li>کتابخانه بین همهٔ ربات‌ها مشترک است؛ هر آهنگی که یک ربات بگیرد، بقیهٔ ربات‌ها هم می‌توانند پخشش کنند.</li>
+          <li>آهنگ‌های غیرفعال در انتخاب تصادفی نمی‌آیند.</li>
+          <li>حداکثر حجم {MAX_UPLOAD_MB} مگابایت است (تنظیم <b dir="ltr">music_max_mb</b> در بخش تنظیمات).</li>
+          <li>پخش برای ربات‌هایی که در بخش «ربات‌ها» تیک موزیک ندارند، خاموش است.</li>
         </ul>
       </div>
     </div>

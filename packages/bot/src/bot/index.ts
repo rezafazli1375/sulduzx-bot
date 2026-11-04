@@ -83,8 +83,8 @@ async function startEntry(botId: number, token: string) {
     entry.username = me.username;
     await prisma.bot.update({ where: { id: botId }, data: { username: me.username } });
 
-    // Register / commands for private chats and groups
-    await syncCommandMenus(entry.instance.telegram);
+    // Register / commands for private chats and groups (per-bot permissions)
+    await syncCommandMenus(entry.instance.telegram, botId);
 
     entry.instance.launch({ dropPendingUpdates: true }).catch((error: any) => {
       entry.running = false;
@@ -155,6 +155,17 @@ export function getBotRuntime(botId: number): BotRuntimeStatus {
 export function getBotInstance(botId: number): Telegraf | undefined {
   const entry = running.get(botId);
   return entry?.running ? entry.instance : undefined;
+}
+
+/**
+ * بعد از تغییر دسترسی‌های یک ربات در پنل، منوی دستورهای تلگرام همان ربات از نو
+ * ساخته می‌شود تا دستوری که اجازه ندارد در لیست / نماند.
+ */
+export async function resyncBotCommands(botId: number): Promise<boolean> {
+  const entry = running.get(botId);
+  if (!entry?.running) return false;
+  await syncCommandMenus(entry.instance.telegram, botId);
+  return true;
 }
 
 export function getFirstRunningBot(): Telegraf | undefined {

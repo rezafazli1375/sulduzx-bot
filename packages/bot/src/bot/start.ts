@@ -6,6 +6,8 @@ import { getText } from '../lib/texts.js';
 import { DEFAULT_MENU_BUTTONS, KNOWN_MENU_KEYS, buttonStyle } from '../lib/menu-defaults.js';
 import { chunkColumns } from '../lib/ui.js';
 import { isFeatureBlocked } from '../lib/restrictions.js';
+import { blockedFeaturesOf } from '../lib/bot-access.js';
+import { getBotId } from '../lib/bot-context.js';
 
 export async function handleStart(ctx: Context, user: any) {
   const forceJoin = await getSettingBool('force_join_channels');
@@ -126,12 +128,16 @@ export async function sendMainMenu(ctx: Context, user: any, greeting?: string) {
 
   const menuRows = await loadMenuButtons();
 
+  // لایهٔ ربات: در پنل، بخش «ربات‌ها» می‌گوید این ربات کدام بخش‌ها را نشان دهد
+  const blockedForBot = await blockedFeaturesOf(getBotId(ctx));
+
   const visibleButtons = menuRows
     .filter(
       (item) =>
         item.isActive &&
         KNOWN_MENU_KEYS.has(item.key) &&
         availability[item.key] !== false &&
+        !blockedForBot.includes(item.key) &&
         !isFeatureBlocked(user, item.key)
     )
     .map((item) => {

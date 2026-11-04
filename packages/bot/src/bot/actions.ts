@@ -14,7 +14,6 @@ import { mainMenuKeyboard } from '../lib/ui.js';
 import { getBotId } from '../lib/bot-context.js';
 import { findUserByCtx } from '../lib/user.js';
 import { handleGameAction, handleGameCheckMembership } from './games/index.js';
-import { handleMusicAction } from './music.js';
 
 export function setupActionHandlers(bot: Telegraf) {
   bot.action('main_menu', async (ctx) => {
@@ -226,9 +225,6 @@ export function setupActionHandlers(bot: Telegraf) {
     await handleGameAction(ctx);
   });
 
-  // Music player (کارت پخش گروه)
-  bot.action(/^music:/, async (ctx) => {
-    await handleMusicAction(ctx);
-  });
+  // پخش موزیک دکمه ندارد: آهنگ به‌شکل ویس در گروه می‌نشیند (bot/music.ts)
 
 }

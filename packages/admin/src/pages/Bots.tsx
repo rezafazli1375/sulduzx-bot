@@ -1,6 +1,22 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Bot as BotIcon, Plus, Edit, Trash2, X, Info, Eye, EyeOff, CircleCheck, CircleX, CirclePause } from 'lucide-react';
+import {
+  Bot as BotIcon,
+  Plus,
+  Edit,
+  Trash2,
+  X,
+  Info,
+  Eye,
+  EyeOff,
+  CircleCheck,
+  CircleX,
+  CirclePause,
+  ShieldCheck,
+  Gamepad2,
+  Sparkles,
+} from 'lucide-react';
+import { BOT_FEATURE_LABELS, GAME_LABELS, featureLabel, gameLabel } from '../lib/features';
 
 type BotRow = {
   id: number;
@@ -9,12 +25,32 @@ type BotRow = {
   username: string | null;
   isActive: boolean;
   sortOrder: number;
+  blockedFeatures?: string[] | null;
+  blockedGames?: string[] | null;
   usersCount: number;
   channelsCount: number;
   runtime: { running: boolean; username?: string; error?: string };
 };
 
-const emptyForm = { name: '', token: '', isActive: true, sortOrder: 50 };
+const ALL_FEATURE_KEYS = BOT_FEATURE_LABELS.map((item) => item.key);
+const ALL_GAME_KEYS = GAME_LABELS.map((item) => item.key);
+
+const emptyForm = {
+  name: '',
+  token: '',
+  isActive: true,
+  sortOrder: 50,
+};
+
+/** فهرست «مجاز»ها را به فهرست «مسدود»ها تبدیل می‌کند (همان چیزی که در دیتابیس می‌ماند) */
+function toBlocked(all: string[], allowed: string[]) {
+  return all.filter((key) => !allowed.includes(key));
+}
+
+function toAllowed(all: string[], blocked: string[] | null | undefined) {
+  const blockedSet = new Set(blocked ?? []);
+  return all.filter((key) => !blockedSet.has(key));
+}
 
 export default function Bots() {
   const [bots, setBots] = useState<BotRow[]>([]);
@@ -40,7 +76,12 @@ export default function Bots() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm(emptyForm);
+    // ربات تازه: همهٔ بخش‌ها و بازی‌ها آزاد
+    setForm({
+      ...emptyForm,
+      allowedFeatures: [...ALL_FEATURE_KEYS],
+      allowedGames: [...ALL_GAME_KEYS],
+    });
     setShowToken(false);
     setError('');
     setShowModal(true);
@@ -53,10 +94,24 @@ export default function Bots() {
       token: bot.token,
       isActive: bot.isActive,
       sortOrder: bot.sortOrder,
+      allowedFeatures: toAllowed(ALL_FEATURE_KEYS, bot.blockedFeatures),
+      allowedGames: toAllowed(ALL_GAME_KEYS, bot.blockedGames),
     });
     setShowToken(false);
     setError('');
     setShowModal(true);
+  };
+
+  const toggleIn = (field: 'allowedFeatures' | 'allowedGames', key: string) => {
+    const current: string[] = form[field] ?? [];
+    setForm({
+      ...form,
+      [field]: current.includes(key) ? current.filter((item) => item !== key) : [...current, key],
+    });
+  };
+
+  const setAll = (field: 'allowedFeatures' | 'allowedGames', keys: string[]) => {
+    setForm({ ...form, [field]: [...keys] });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -64,10 +119,18 @@ export default function Bots() {
     setLoading(true);
     setError('');
     try {
+      const payload = {
+        name: form.name,
+        token: form.token,
+        isActive: form.isActive,
+        sortOrder: form.sortOrder,
+        blockedFeatures: toBlocked(ALL_FEATURE_KEYS, form.allowedFeatures ?? []),
+        blockedGames: toBlocked(ALL_GAME_KEYS, form.allowedGames ?? []),
+      };
       if (editing) {
-        await axios.put(`/api/bots/${editing.id}`, form);
+        await axios.put(`/api/bots/${editing.id}`, payload);
       } else {
-        await axios.post('/api/bots', form);
+        await axios.post('/api/bots', payload);
       }
       setShowModal(false);
       await loadBots();
@@ -118,6 +181,78 @@ export default function Bots() {
     );
   };
 
+  /** خلاصهٔ دسترسی ربات در جدول: «همهٔ بخش‌ها» یا تعداد بخش/بازی‌های باز */
+  const accessBadge = (bot: BotRow) => {
+    const blockedFeatures = toBlocked(ALL_FEATURE_KEYS, toAllowed(ALL_FEATURE_KEYS, bot.blockedFeatures));
+    const blockedGames = toBlocked(ALL_GAME_KEYS, toAllowed(ALL_GAME_KEYS, bot.blockedGames));
+
+    if (blockedFeatures.length === 0 && blockedGames.length === 0) {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-200">
+          <ShieldCheck size={13} />
+          همهٔ بخش‌ها
+        </span>
+      );
+    }
+
+    const details = [...blockedFeatures.map(featureLabel), ...blockedGames.map(gameLabel)];
+    return (
+      <span
+        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200"
+        title={`غیرفعال: ${details.join('، ')}`}
+      >
+        <ShieldCheck size={13} />
+        {`${ALL_FEATURE_KEYS.length - blockedFeatures.length} بخش · ${
+          ALL_GAME_KEYS.length - blockedGames.length
+        } بازی`}
+      </span>
+    );
+  };
+
+  const renderCheckboxGrid = (
+    field: 'allowedFeatures' | 'allowedGames',
+    items: { key: string; label: string }[],
+    allKeys: string[]
+  ) => {
+    const allowed: string[] = form[field] ?? [];
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
+        {items.map((item) => (
+          <label
+            key={item.key}
+            className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none hover:text-gray-900"
+          >
+            <input
+              type="checkbox"
+              checked={allowed.includes(item.key)}
+              onChange={() => toggleIn(field, item.key)}
+              className="w-4 h-4 text-cyan-600 rounded border-gray-300"
+            />
+            <span>{item.label}</span>
+          </label>
+        ))}
+        <div className="flex items-center gap-2 sm:col-span-2 pt-1">
+          <button
+            type="button"
+            onClick={() => setAll(field, allKeys)}
+            className="text-xs text-cyan-700 hover:text-cyan-900 font-medium"
+          >
+            انتخاب همه
+          </button>
+          <span className="text-gray-300">|</span>
+          <button
+            type="button"
+            onClick={() => setAll(field, [])}
+            className="text-xs text-gray-500 hover:text-gray-700 font-medium"
+          >
+            برداشتن همه
+          </button>
+          <span className="text-xs text-gray-400 mr-auto">{`${allowed.length} از ${allKeys.length}`}</span>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -128,7 +263,9 @@ export default function Bots() {
             </div>
             ربات‌ها
           </h1>
-          <p className="text-gray-500 mt-2">مدیریت توکن و وضعیت ربات‌های تلگرامی متصل به سامانه</p>
+          <p className="text-gray-500 mt-2">
+            مدیریت توکن، وضعیت و سطح دسترسی ربات‌های تلگرامی متصل به سامانه
+          </p>
         </div>
         <button onClick={openCreate} className="btn-primary flex items-center gap-2">
           <Plus size={18} />
@@ -141,7 +278,8 @@ export default function Bots() {
         <p className="text-sm text-blue-800 leading-6">
           هر ربات کاربران، امتیازها، کانال‌های عضویت اجباری و آمار مستقل خودش را دارد. با ذخیره یا
           تغییر توکن، همان ربات به‌صورت خودکار ری‌استارت می‌شود و بقیه ربات‌ها بدون قطعی به کار خود
-          ادامه می‌دهند.
+          ادامه می‌دهند. از بخش «دسترسی این ربات» می‌توانید مشخص کنید هر ربات به کدام امکانات و کدام
+          بازی‌ها دسترسی داشته باشد؛ کتابخانهٔ موزیک بین همهٔ ربات‌ها مشترک است.
         </p>
       </div>
 
@@ -156,6 +294,7 @@ export default function Bots() {
               <th className="text-right py-4 px-6 text-sm font-semibold text-gray-600">نام</th>
               <th className="text-right py-4 px-6 text-sm font-semibold text-gray-600">یوزرنیم</th>
               <th className="text-right py-4 px-6 text-sm font-semibold text-gray-600">وضعیت</th>
+              <th className="text-right py-4 px-6 text-sm font-semibold text-gray-600">دسترسی</th>
               <th className="text-right py-4 px-6 text-sm font-semibold text-gray-600">کاربران</th>
               <th className="text-right py-4 px-6 text-sm font-semibold text-gray-600">کانال‌ها</th>
               <th className="text-right py-4 px-6 text-sm font-semibold text-gray-600">توکن</th>
@@ -165,7 +304,7 @@ export default function Bots() {
           <tbody className="divide-y divide-gray-100">
             {bots.length === 0 ? (
               <tr>
-                <td colSpan={7} className="text-center py-12 text-gray-400">
+                <td colSpan={8} className="text-center py-12 text-gray-400">
                   <BotIcon size={48} className="mx-auto mb-3 opacity-30" />
                   <p>رباتی ثبت نشده است</p>
                 </td>
@@ -182,6 +321,7 @@ export default function Bots() {
                     )}
                   </td>
                   <td className="py-4 px-6">{statusBadge(bot)}</td>
+                  <td className="py-4 px-6">{accessBadge(bot)}</td>
                   <td className="py-4 px-6 text-gray-600">{bot.usersCount.toLocaleString('fa-IR')}</td>
                   <td className="py-4 px-6 text-gray-600">{bot.channelsCount.toLocaleString('fa-IR')}</td>
                   <td className="py-4 px-6">
@@ -194,7 +334,7 @@ export default function Bots() {
                       <button
                         onClick={() => openEdit(bot)}
                         className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                        title="ویرایش / تغییر توکن"
+                        title="ویرایش / دسترسی‌ها / تغییر توکن"
                       >
                         <Edit size={16} />
                       </button>
@@ -216,7 +356,7 @@ export default function Bots() {
 
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <h2 className="text-xl font-bold text-gray-900">
                 {editing ? `ویرایش ${editing.name}` : 'افزودن ربات جدید'}
@@ -289,10 +429,48 @@ export default function Bots() {
                 </label>
               </div>
 
+              <div className="border-t border-gray-100 pt-5 space-y-5">
+                <div className="flex items-start gap-2">
+                  <ShieldCheck size={18} className="text-cyan-600 mt-0.5 shrink-0" />
+                  <div>
+                    <h3 className="text-base font-bold text-gray-900">دسترسی این ربات</h3>
+                    <p className="text-xs text-gray-500 leading-6 mt-1">
+                      هر تیک یعنی آن بخش برای این ربات باز است. با برداشتن تیک، دکمهٔ آن از منوی
+                      اصلی ربات حذف می‌شود، دستورهای آن از منوی دستورات تلگرام برداشته می‌شود و ورود
+                      به آن بخش برای کاربران این ربات بسته می‌شود. تنظیم‌های بخش «تنظیمات» سراسری و
+                      برای همهٔ ربات‌هاست؛ این فهرست فقط روی همین ربات عمل می‌کند.
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                    <Sparkles size={15} className="text-fuchsia-500" />
+                    امکانات
+                  </p>
+                  {renderCheckboxGrid('allowedFeatures', BOT_FEATURE_LABELS, ALL_FEATURE_KEYS)}
+                </div>
+
+                <div>
+                  <p className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                    <Gamepad2 size={15} className="text-emerald-500" />
+                    بازی‌ها
+                  </p>
+                  {renderCheckboxGrid('allowedGames', GAME_LABELS, ALL_GAME_KEYS)}
+                  <p className="text-xs text-gray-400 leading-5 mt-2">
+                    با برداشتن تیک «بازی‌ها» در بخش امکانات، همهٔ بازی‌های این ربات یکجا بسته می‌شود.
+                  </p>
+                </div>
+              </div>
+
               {error && <p className="text-sm text-red-600 leading-6">{error}</p>}
 
               <div className="flex items-center gap-3 pt-2">
-                <button type="submit" disabled={loading} className="btn-primary flex-1 disabled:opacity-50">
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="btn-primary flex-1 disabled:opacity-50"
+                >
                   {loading ? 'در حال ذخیره...' : editing ? 'ذخیره تغییرات' : 'افزودن ربات'}
                 </button>
                 <button

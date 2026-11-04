@@ -297,21 +297,8 @@ export default function Settings() {
       title: 'موزیک',
       icon: '🎵',
       color: 'from-fuchsia-500 to-purple-600',
-      hint: 'ربات با دستور /music و /play در گروه‌ها آهنگ پخش می‌کند. برای افزودن آهنگ به بخش «موزیک» بروید. اگر کاربری آهنگی را در گروه بفرستد و در کپشن بنویسد «پخش»، ربات آن را در کتابخانه حفظ می‌کند.',
+      hint: 'ربات در گروه با دستور /play یا /music یک آهنگ تصادفی را به‌شکل ویس می‌فرستد؛ روی ویس نام آهنگ و آیدی خودِ ربات نوشته می‌شود و دکمهٔ «آهنگ بعدی/توقف» یا پیام اضافه ارسال نمی‌شود. کتابخانهٔ آهنگ‌ها بین همهٔ ربات‌ها مشترک است و برای افزودن آهنگ به بخش «موزیک» بروید. اگر کاربری آهنگی را در گروه بفرستد و در کپشن بنویسد «پخش»، ربات آن را در همین کتابخانه حفظ می‌کند. دسترسی هر ربات به موزیک از بخش «ربات‌ها» تنظیم می‌شود.',
       keys: ['music_enabled', 'music_user_songs', 'music_max_mb'],
-    },
-    {
-      title: 'پخش در ویس‌کال',
-      icon: '🎧',
-      color: 'from-cyan-500 to-teal-600',
-      hint: 'برای اینکه آهنگ داخل ویس‌کال گروه پخش شود، در بخش «موزیک» یک حساب تلگرام (شماره + کد تأیید) وارد کنید. دستور و دکمه‌های ربات در چت همان‌طور که هست کار می‌کند و فقط صدا از حساب کاربری پخش می‌شود. سرویس ویس‌کال روی شبکهٔ داخلی داکر است و پورتی روی سرور باز نمی‌کند.',
-      keys: [
-        'music_voice_enabled',
-        'music_voice_default_mode',
-        'music_voice_auto_start',
-        'music_voice_max_streams',
-        'music_voice_quality',
-      ],
     },
     {
       title: 'وضعیت سرور',
@@ -423,26 +410,6 @@ export default function Settings() {
                           {setting.value === 'true' ? 'فعال' : 'غیرفعال'}
                         </span>
                       </label>
-                    ) : key === 'music_voice_default_mode' ? (
-                      <select
-                        value={setting.value}
-                        onChange={(e) => handleChange(key, e.target.value)}
-                        className="input-field max-w-xs"
-                      >
-                        <option value="chat">پیام صوتی در چت گروه</option>
-                        <option value="voice">استریم در ویس‌کال گروه</option>
-                      </select>
-                    ) : key === 'music_voice_quality' ? (
-                      <select
-                        value={setting.value}
-                        onChange={(e) => handleChange(key, e.target.value)}
-                        className="input-field max-w-xs"
-                      >
-                        <option value="low">کم — پهنای باند کمتر</option>
-                        <option value="medium">متوسط</option>
-                        <option value="high">زیاد (پیشنهادی)</option>
-                        <option value="studio">استودیویی — سنگین‌ترین</option>
-                      </select>
                     ) : key === 'free_config_limit_type' ? (
                       <select
                         value={setting.value}

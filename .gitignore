@@ -17,8 +17,3 @@ coverage/
 *.swo
 tmp/
 uploads/
-
-# سرویس ویس‌کال: کلید API، فهرست حساب‌ها و رشتهٔ سشن هرگز نباید در مخزن برود
-*.session
-data/voice/
-packages/voice/voice/

@@ -1,21 +1,34 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { prisma } from './prisma.js';
 
+const execFileAsync = promisify(execFile);
+
 // ─── کتابخانهٔ موزیک ─────────────────────────
-// هر آهنگ می‌تواند دو منبع داشته باشد:
-//  • fileId  → شناسهٔ فایل تلگرام. مخصوص همان ربات است و تا ابد معتبر می‌ماند؛
-//    پخش از روی آن هیچ دانلودی ندارد و سریع‌ترین راه است. وقتی کاربری آهنگی را
-//    در گروه می‌فرستد، همین حالا در دسترس است؛ وقتی آهنگ از فایل محلی پخش
-//    می‌شود، تلگرام file_id را برمی‌گرداند و برای دفعات بعد ذخیره می‌شود.
-//  • filePath → کپی محلی روی volume مشترک (/app/data/music). برای آهنگی که از
-//    پنل آپلود می‌شود تنها منبع اولیه است و برای استریم در ویس‌کال (سرویس
-//    MTProto که فایل را با ffmpeg می‌خواند) لازم است.
+// این کتابخانه **مشترک** است: هیچ آهنگی به یک ربات نمی‌چسبد. هر رباتی که در پنل
+// ثبت و فعال باشد از همان فهرست آهنگ‌ها پخش می‌کند.
+//
+// دلیلش این است که file_id تلگرام فقط برای همان رباتی معتبر است که فایل را
+// گرفته؛ پس منبع اصلی، **فایل محلی روی volume** است. ربات موقع پخش همان فایل
+// را به قالب ویس (OGG/Opus) تبدیل می‌کند تا تلگرامش را به‌شکل ویس نشان دهد.
+// خروجی تبدیل برای هر آهنگ یک‌بار روی دیسک می‌ماند و به درد همهٔ ربات‌ها
+// می‌خورد؛ file_id ویسِ ساخته‌شده فقط در حافظهٔ پروسه و فقط برای همان ربات نگه
+// داشته می‌شود (چون بین ربات‌ها قابل استفاده نیست).
 export const MUSIC_DIR =
   process.env.MUSIC_DIR || path.join(process.cwd(), 'data', 'music');
 
-/** حجم پیش‌فرض مجاز برای آهنگ آپلودی (مگابایت)؛ از تنظیم music_max_mb قابل تغییر است */
+/** فایل اصلی هر آهنگ */
+export const TRACKS_DIR = path.join(MUSIC_DIR, 'tracks');
+/** خروجی تبدیل‌شده به ویس (OGG/Opus) */
+export const VOICE_CACHE_DIR = path.join(MUSIC_DIR, 'voice');
+
+/** حجم پیش‌فرض مجاز برای آهنگ (مگابایت)؛ از تنظیم music_max_mb قابل تغییر است */
 export const MUSIC_DEFAULT_MAX_MB = 25;
+
+/** سقف دانلود فایل از تلگرام با Bot API (بیشترباشد file_path کار نمی‌کند) */
+export const BOT_API_DOWNLOAD_MAX_BYTES = 20 * 1024 * 1024;
 
 const AUDIO_EXTENSIONS = new Set(['mp3', 'm4a', 'aac', 'ogg', 'oga', 'opus', 'flac', 'wav']);
 
@@ -33,12 +46,7 @@ const MIME_TO_EXT: Record<string, string> = {
   'audio/m4a': 'm4a',
 };
 
-export function botMusicDir(botId: number): string {
-  return path.join(MUSIC_DIR, String(botId));
-}
-
-export function ensureBotMusicDir(botId: number): string {
-  const dir = botMusicDir(botId);
+function ensureDir(dir: string): string {
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -60,14 +68,19 @@ export function isAudioFileName(fileName?: string | null, mimeType?: string | nu
   );
 }
 
-/** ذخیرهٔ فایل آهنگ روی دیسک و برگرداندن مسیر مطلق */
-export function saveAudioFile(botId: number, buffer: Buffer, ext: string): string {
-  const dir = ensureBotMusicDir(botId);
+/** ذخیرهٔ فایل آهنگ در کتابخانهٔ مشترک و برگرداندن مسیر مطلق */
+export function saveAudioFile(buffer: Buffer, ext: string): string {
+  const dir = ensureDir(TRACKS_DIR);
   const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const safeExt = AUDIO_EXTENSIONS.has(ext) ? ext : 'mp3';
   const file = path.join(dir, `${unique}.${safeExt}`);
   fs.writeFileSync(file, buffer);
   return file;
+}
+
+/** مسیر فایل ویسِ تبدیل‌شدهٔ یک آهنگ (خروجی ffmpeg) */
+export function voiceCachePath(trackId: number): string {
+  return path.join(VOICE_CACHE_DIR, `${trackId}.ogg`);
 }
 
 /** حذف فایل از دیسک؛ فقط فایل‌های داخل پوشهٔ موزیک (برای اینکه اشتباهی چیزی پاک نشود) */
@@ -84,6 +97,19 @@ export function removeAudioFile(filePath?: string | null): boolean {
   }
 }
 
+/** فایل ویس تبدیل‌شدهٔ یک آهنگ هم پاک می‌شود تا بی‌استفاده روی دیسک نماند */
+export function removeVoiceCache(trackId: number): boolean {
+  const file = voiceCachePath(trackId);
+  if (!file.startsWith(path.resolve(VOICE_CACHE_DIR) + path.sep)) return false;
+  try {
+    fs.rmSync(file, { force: true });
+    return true;
+  } catch (error) {
+    console.error('Remove voice cache error:', error);
+    return false;
+  }
+}
+
 export function audioFileExists(filePath?: string | null): boolean {
   if (!filePath) return false;
   try {
@@ -93,19 +119,16 @@ export function audioFileExists(filePath?: string | null): boolean {
   }
 }
 
-/** سقف دانلود فایل از تلگرام با Bot API (بیشترباشد file_path کار نمی‌کند) */
-export const BOT_API_DOWNLOAD_MAX_BYTES = 20 * 1024 * 1024;
-
 /**
- * فایل آهنگ را از تلگرام روی دیسک می‌آورد تا سرویس ویس‌کال بتواند آن را
- * استریم کند. file_id مخصوص همان ربات است و حساب کاربری تلگرام نمی‌تواند با
- * آن فایل را بخواند؛ پس برای پخش در ویس‌کال یک کپی محلی لازم است.
- * مسیر فایل را برمی‌گرداند و در مسیر جدید null (با دلیل در لاگ).
+ * فایل آهنگ را از تلگرام به کتابخانهٔ مشترک می‌آورد.
+ * آهنگی که کاربر در گروه فرستاده فقط file_id دارد و آن file_id هم فقط به همان
+ * ربات می‌چسد؛ برای اینکه بقیهٔ ربات‌ها هم بتوانند آن را پخش کنند، یک‌بار
+ * دانلود و در کتابخانه ذخیره می‌شود. مسیر فایل برمی‌گرداند و در خطا null
+ * (دلیلش در لاگ می‌آید).
  */
 export async function downloadToLibrary(
   telegram: any,
   fileId: string,
-  botId: number,
   mimeType?: string | null,
   fileName?: string | null
 ): Promise<string | null> {
@@ -135,7 +158,7 @@ export async function downloadToLibrary(
       console.warn('Music file grew past the download limit:', buffer.length);
       return null;
     }
-    return saveAudioFile(botId, buffer, audioExtension(mimeType, fileName || remotePath));
+    return saveAudioFile(buffer, audioExtension(mimeType, fileName || remotePath));
   } catch (error: any) {
     console.error('Music download error:', error?.description || error?.message || error);
     return null;
@@ -143,39 +166,90 @@ export async function downloadToLibrary(
 }
 
 /**
- * آدرس فایل برای سرویس ویس‌کال: همان فایل، اما از دید آن کانتینر.
- * (کتابخانه در ربات /app/data/music و در سرویس /app/music دیده می‌شود؛
- * سرویس خودش این نگاشت را می‌شناسد.)
+ * آهنگ → فایل ویس (OGG/Opus، تک‌کاناله، ۴۸ کیلوهرتز) که تلگرام آن را ویس
+ * نشان می‌دهد. خروجی برای هر آهنگ روی دیسک می‌ماند و اگر فایل اصلی تازه‌تر از
+ * آن باشد، دوباره ساخته می‌شود.
  */
-export function libraryRelativePath(filePath: string): string {
-  const inside = path.resolve(filePath);
-  const root = path.resolve(MUSIC_DIR);
-  if (inside.startsWith(root + path.sep)) return path.relative(root, inside);
-  return inside;
+export async function toVoiceFile(track: {
+  id: number;
+  filePath: string;
+}): Promise<string | null> {
+  if (!audioFileExists(track.filePath)) return null;
+  const output = voiceCachePath(track.id);
+  ensureDir(VOICE_CACHE_DIR);
+
+  try {
+    const sourceMtime = fs.statSync(track.filePath).mtimeMs;
+    if (fs.existsSync(output)) {
+      const cached = fs.statSync(output);
+      if (cached.size > 0 && cached.mtimeMs >= sourceMtime) return output;
+    }
+  } catch {
+    /* اگر وضعیت دیسک خوانده نشد، از نو ساخته می‌شود */
+  }
+
+  try {
+    await execFileAsync(
+      'ffmpeg',
+      [
+        '-y',
+        '-i',
+        track.filePath,
+        '-vn',
+        '-c:a',
+        'libopus',
+        '-b:a',
+        '64k',
+        '-ar',
+        '48000',
+        '-ac',
+        '1',
+        output,
+      ],
+      { timeout: 300_000, maxBuffer: 10 * 1024 * 1024 }
+    );
+    const stats = fs.statSync(output);
+    if (stats.size === 0) return null;
+    return output;
+  } catch (error: any) {
+    console.error('Music voice convert error:', error?.message || error);
+    try {
+      fs.rmSync(output, { force: true });
+    } catch {
+      /* بی‌خطر */
+    }
+    return null;
+  }
 }
 
 /**
- * انتخاب تصادفی یک آهنگ از کتابخانهٔ ربات.
- * `exclude` شناسهٔ آهنگ‌هایی است که اخیراً در همین گروه پخش شده‌اند تا پشت‌سرهم
- * تکرار نشود؛ اگر همهٔ آهنگ‌ها excluded باشند، از کل کتابخانه انتخاب می‌شود.
+ * انتخاب تصادفی یک آهنگ از کتابخانهٔ مشترک.
+ * `exclude` شناسهٔ آهنگ‌هایی است که اخیراً در همین گروه پخش شده‌اند (تازه‌ترین
+ * اول) تا پشت‌سرهم تکرار نشود. اگر کتابخانه از این فهرست کوچک‌تر باشد، به‌اندازهٔ
+ * «یکی کمتر از تعداد آهنگ‌های فعال» حذف می‌شود؛ این‌طوری در کتابخانهٔ کم‌آهنگ هم
+ * آهنگِ همین‌الفرصخشده دوباره انتخاب نمی‌شود و انتخاب هیچ‌وقت به بن‌بست نمی‌خورد.
  */
-export async function pickRandomTrack(botId: number, exclude: number[] = []) {
-  const active = { botId, isActive: true };
-  let pool = await prisma.musicTrack.findMany({
-    where: { ...active, id: { notIn: exclude } },
+export async function pickRandomTrack(exclude: number[] = []) {
+  const active = await prisma.musicTrack.findMany({
+    where: { isActive: true },
     select: { id: true },
   });
-  if (pool.length === 0) pool = await prisma.musicTrack.findMany({ where: active, select: { id: true } });
-  if (pool.length === 0) return null;
+  if (active.length === 0) return null;
+
+  const activeIds = new Set(active.map((track) => track.id));
+  const limit = Math.max(0, Math.min(exclude.length, active.length - 1));
+  const skip = new Set(exclude.filter((id) => activeIds.has(id)).slice(0, limit));
+  const pool = active.filter((track) => !skip.has(track.id));
+
   const chosen = pool[Math.floor(Math.random() * pool.length)];
   return prisma.musicTrack.findUnique({ where: { id: chosen.id } });
 }
 
-export async function countActiveTracks(botId: number): Promise<number> {
-  return prisma.musicTrack.count({ where: { botId, isActive: true } });
+export async function countActiveTracks(): Promise<number> {
+  return prisma.musicTrack.count({ where: { isActive: true } });
 }
 
-/** ثانیه → ۳:۲۰ (برای نمایش در کارت پخش) */
+/** ثانیه → ۳:۲۰ */
 export function formatDuration(seconds?: number | null): string {
   if (!seconds || seconds <= 0) return '—';
   const m = Math.floor(seconds / 60);
@@ -193,11 +267,10 @@ export function formatBytes(bytes?: number | null): string {
 
 /**
  * نام‌گذاری آهنگ از پیام تلگرام: کپشن، نام فایل یا نام هنرمند.
- * برگردانندهٔ { title, artist, fileName, mimeType, fileId, duration, fileSize, kind }
+ * برگردانندهٔ { fileId, title, artist, fileName, mimeType, duration, fileSize }
  */
 export function readAudioFromMessage(msg: any): {
   fileId: string;
-  kind: 'audio' | 'document' | 'voice';
   title: string;
   artist?: string;
   fileName?: string;
@@ -211,8 +284,7 @@ export function readAudioFromMessage(msg: any): {
     const a = msg.audio;
     return {
       fileId: a.file_id,
-      kind: 'audio',
-      title: cleanTitle(a.file_name || msg.caption || 'آهنگ'),
+      title: cleanTitle(stripExtension(a.file_name) || msg.caption || 'آهنگ'),
       artist: a.performer || undefined,
       fileName: a.file_name || undefined,
       mimeType: a.mime_type || 'audio/mpeg',
@@ -225,7 +297,6 @@ export function readAudioFromMessage(msg: any): {
     const v = msg.voice;
     return {
       fileId: v.file_id,
-      kind: 'voice',
       title: cleanTitle(msg.caption || 'ویس'),
       fileName: undefined,
       mimeType: v.mime_type || 'audio/ogg',
@@ -239,7 +310,6 @@ export function readAudioFromMessage(msg: any): {
     if (!isAudioFileName(d.file_name, d.mime_type)) return null;
     return {
       fileId: d.file_id,
-      kind: 'document',
       title: cleanTitle(stripExtension(d.file_name) || msg.caption || 'آهنگ'),
       fileName: d.file_name || undefined,
       mimeType: d.mime_type || 'audio/mpeg',

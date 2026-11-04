@@ -14,13 +14,16 @@ model Bot {
   username  String?
   isActive  Boolean  @default(true) @map("is_active")
   sortOrder Int      @default(0) @map("sort_order")
+  /// کلیدهای قابلیت‌هایی که این ربات مجاز به استفاده از آن‌ها نیست (خالی = همه)
+  blockedFeatures String[] @default([]) @map("blocked_features")
+  /// کلید بازی‌هایی که این ربات نشان نمی‌دهد (خالی = همهٔ بازی‌های فعال)
+  blockedGames    String[] @default([]) @map("blocked_games")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   users     User[]
   channels  Channel[]
   groups    GroupChat[]
-  musicTracks MusicTrack[]
 
   @@map("bots")
 }
@@ -361,9 +364,6 @@ model GroupChat {
   memberCount Int?      @map("member_count")
   botIsAdmin  Boolean   @default(false) @map("bot_is_admin")
   isJoined    Boolean   @default(true) @map("is_joined")
-  /// محل پخش آهنگ در این گروه: default از تنظیم سراسری پیروی می‌کند،
-  /// chat یعنی پیام صوتی در چت، voice یعنی استریم داخل ویس‌کال گروه
-  musicMode   String    @default("default") @map("music_mode")
   lastSeenAt  DateTime  @default(now()) @map("last_seen_at")
   leftAt      DateTime? @map("left_at")
   createdAt   DateTime  @default(now()) @map("created_at")
@@ -377,20 +377,18 @@ model GroupChat {
   @@map("group_chats")
 }
 
-/// کتابخانهٔ آهنگ‌ها؛ fileId همان file_id تلگرام است (برای همان ربات همیشگی)
-/// و filePath کپی محلی روی volume مشترک (برای استریم در ویس‌کال لازم است).
+/// کتابخانهٔ آهنگ‌ها. این کتابخانه **مشترک** است: به هیچ رباتی وابسته نیست و
+/// هر رباتی که در پنل فعال باشد از همان آهنگ‌ها پخش می‌کند. منبع هر آهنگ یک
+/// فایل محلی روی volume است (filePath)؛ ربات همان فایل را موقع پخش به قالب
+/// ویس (OGG/Opus) تبدیل می‌کند و با کپشن «نام آهنگ + آیدی ربات» می‌فرستد.
 model MusicTrack {
   id        Int      @id @default(autoincrement())
-  botId     Int      @map("bot_id")
   title     String
   artist    String?
-  fileId    String?  @map("file_id") @db.Text
-  filePath  String?  @map("file_path")
+  filePath  String   @map("file_path")
   duration  Int?
   fileSize  Int?     @map("file_size")
   mimeType  String?  @map("mime_type")
-  /// نوع فایل تلگرام: audio (آهنگ)، document (فایل MP3 ارسال‌شده به‌عنوان سند) یا voice
-  kind      String   @default("audio")
   playCount Int      @default(0) @map("play_count")
   isActive  Boolean  @default(true) @map("is_active")
   addedBy   BigInt?  @map("added_by")
@@ -398,10 +396,9 @@ model MusicTrack {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  bot   Bot         @relation(fields: [botId], references: [id])
   plays MusicPlay[]
 
-  @@index([botId, isActive])
+  @@index([isActive])
   @@map("music_tracks")
 }
 
@@ -413,7 +410,6 @@ model MusicPlay {
   requestId BigInt?         @map("request_id")
   requestName String?       @map("request_name")
   messageId BigInt?         @map("message_id")
-  mode      String          @default("audio")
   status    MusicPlayStatus @default(PLAYING)
   startedAt DateTime        @default(now()) @map("started_at")
   endedAt   DateTime?       @map("ended_at")

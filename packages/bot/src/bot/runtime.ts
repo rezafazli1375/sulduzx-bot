@@ -45,8 +45,6 @@ const GROUP_ALLOWED_COMMANDS = new Set([
   '/scala',
   '/music',
   '/play',
-  '/next',
-  '/stop',
 ]);
 
 const DIRECT_GAME_COMMANDS: Array<[string, DirectGameKey]> = [
@@ -305,18 +303,12 @@ export function createBotInstance(botId: number, token: string): Telegraf {
     });
   }
 
-  // موزیک در گروه: /music (کارت پخش)، /play (تصادفی)، /next، /stop
-  const MUSIC_COMMANDS: Array<[string, 'card' | 'play' | 'next' | 'stop']> = [
-    ['music', 'card'],
-    ['play', 'play'],
-    ['next', 'next'],
-    ['stop', 'stop'],
-  ];
-  for (const [command, action] of MUSIC_COMMANDS) {
+  // موزیک در گروه: /music و /play — یک آهنگ تصادفی به‌شکل ویس، بدون دکمه
+  for (const command of ['music', 'play']) {
     bot.command(command, async (ctx) => {
       const user = await getUser(ctx);
       if (!user) return;
-      await handleMusicCommand(ctx, action);
+      await handleMusicCommand(ctx);
     });
   }
 

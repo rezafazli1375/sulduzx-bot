@@ -444,8 +444,7 @@ if [ "$DRY_RUN" = "1" ]; then
   info "[dry-run] write $ENV_FILE (chmod 600)"
 elif [ "$REUSE_ENV" = "1" ]; then
   chmod 600 "$ENV_FILE"
-  mkdir -p "$DIR/data/backups" "$DIR/data/voice"
-  chmod 700 "$DIR/data/voice"
+  mkdir -p "$DIR/data/backups"
   ok "Existing .env kept."
 else
   umask 077
@@ -474,16 +473,9 @@ NODE_ENV=production
 TZ=$(env_quote "${TZ:-Asia/Tehran}")
 ADMIN_PANEL_URL=$(env_quote "$DETECTED_PANEL_URL")
 YTDLP_PROXY=$(env_quote "${YTDLP_PROXY:-}")
-
-# پخش آهنگ در ویس‌کال (سرویس داخلی sulduz-voice؛ پورتی روی سرور باز نمی‌کند)
-VOICE_URL=$(env_quote "${VOICE_URL:-http://sulduz-voice:8077}")
-VOICE_MAX_STREAMS=$(env_quote "${VOICE_MAX_STREAMS:-5}")
-VOICE_AUDIO_QUALITY=$(env_quote "${VOICE_AUDIO_QUALITY:-high}")
-VOICE_AUTO_START=$(env_quote "${VOICE_AUTO_START:-1}")
 EOF
   chmod 600 "$ENV_FILE"
-  mkdir -p "$DIR/data/backups" "$DIR/data/voice"
-  chmod 700 "$DIR/data/voice"
+  mkdir -p "$DIR/data/backups"
   ok ".env created."
 fi
 

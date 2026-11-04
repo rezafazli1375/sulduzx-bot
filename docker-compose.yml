@@ -38,7 +38,6 @@ services:
       TZ: ${TZ:-Asia/Tehran}
       YTDLP_PROXY: ${YTDLP_PROXY:-}
       MUSIC_DIR: /app/data/music
-      VOICE_URL: ${VOICE_URL:-http://sulduz-voice:8077}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -46,27 +45,6 @@ services:
     volumes:
       - downloads:/tmp/sulduz-downloads
       - ./data:/app/data
-    networks:
-      - sulduz-network
-
-  # سرویس کمکی پخش آهنگ در ویس‌کال (MTProto با حساب کاربری تلگرام).
-  # عمداً هیچ پورتی روی سرور منتشر نمی‌کند: فقط ربات روی شبکهٔ داخلی آن را صدا
-  # می‌زند. کلید API، حساب‌ها و سشن‌ها در ./data/voice (خارج از مخزن) می‌مانند.
-  voice:
-    build:
-      context: ./packages/voice
-      dockerfile: Dockerfile
-    container_name: sulduz-voice
-    restart: unless-stopped
-    environment:
-      TZ: ${TZ:-Asia/Tehran}
-      VOICE_PORT: 8077
-      VOICE_MAX_STREAMS: ${VOICE_MAX_STREAMS:-5}
-      VOICE_AUDIO_QUALITY: ${VOICE_AUDIO_QUALITY:-high}
-      VOICE_AUTO_START: ${VOICE_AUTO_START:-1}
-    volumes:
-      - ./data/music:/app/music:ro
-      - ./data/voice:/app/voice
     networks:
       - sulduz-network
 

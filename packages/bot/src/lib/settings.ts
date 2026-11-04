@@ -152,42 +152,33 @@ const REQUIRED_DEFAULTS: Array<{
     key: 'music_max_mb',
     value: '25',
     type: 'NUMBER',
-    description: 'حداکثر حجم آهنگ آپلودی از پنل (مگابایت)',
+    description: 'حداکثر حجم آهنگ (مگابایت) — هم آپلود از پنل هم آهنگی که کاربر در گروه می‌فرستد',
   },
-  {
-    key: 'music_voice_enabled',
-    value: 'false',
-    type: 'BOOLEAN',
-    description: 'پخش آهنگ در ویس‌کال گروه‌ها فعال شود (نیازمند حساب تلگرام در بخش موزیک پنل)',
-  },
-  {
-    key: 'music_voice_default_mode',
-    value: 'chat',
-    type: 'STRING',
-    description: 'حالت پیش‌فرض پخش در گروه‌ها: chat (پیام صوتی در چت) یا voice (ویس‌کال)',
-  },
-  {
-    key: 'music_voice_auto_start',
-    value: 'true',
-    type: 'BOOLEAN',
-    description: 'حساب تلگرام خودش ویس‌کال گروه را باز کند (اگر خاموش باشد فقط وقتی گروه در ویس‌کال باشد پخش می‌شود)',
-  },
-  {
-    key: 'music_voice_max_streams',
-    value: '5',
-    type: 'NUMBER',
-    description: 'سقف پخش هم‌زمان آهنگ در ویس‌کال روی سرور',
-  },
-  {
-    key: 'music_voice_quality',
-    value: 'high',
-    type: 'STRING',
-    description: 'کیفیت صدای استریم: low، medium، high یا studio',
-  },
+];
+
+/**
+ * تنظیماتی که از نسخهٔ ۱٫۹٫۰ دیگر وجود ندارند (پخش در ویس‌کال حذف شد).
+ * در نصب‌های قدیمی سطرهایشان در دیتابیس می‌ماند و در صفحهٔ تنظیمات دیده می‌شود،
+ * پس هنگام بالا آمدن ربات پاک می‌شوند.
+ */
+export const REMOVED_SETTINGS = [
+  'music_voice_enabled',
+  'music_voice_default_mode',
+  'music_voice_auto_start',
+  'music_voice_max_streams',
+  'music_voice_quality',
 ];
 
 export async function ensureDefaultSettings(): Promise<void> {
   let created = false;
+
+  // تنظیمات حذف‌شدهٔ نسخه‌های قبلی از دیتابیس بیرون روند تا در پنل نمانند
+  if (REMOVED_SETTINGS.length) {
+    const removed = await prisma.setting
+      .deleteMany({ where: { key: { in: REMOVED_SETTINGS } } })
+      .catch(() => null);
+    if (removed && removed.count > 0) clearSettingsCache();
+  }
 
   for (const setting of REQUIRED_DEFAULTS) {
     const existing = await prisma.setting.findUnique({ where: { key: setting.key } });

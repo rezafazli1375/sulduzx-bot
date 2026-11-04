@@ -1,12 +1,9 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { Router, Response } from 'express';
 import { prisma } from '../../lib/prisma.js';
 import { AuthRequest } from '../middleware/auth.js';
 import { getSettingNumber } from '../../lib/settings.js';
 import { getBotInstance } from '../../bot/index.js';
-import { reconcileMusicPlays, registerMusicPlay } from '../../bot/music.js';
-import { stopVoiceCall } from '../../lib/music-voice.js';
+import { playTrackInChat, reconcileMusicPlays } from '../../bot/music.js';
 import {
   MUSIC_DEFAULT_MAX_MB,
   audioExtension,
@@ -14,10 +11,16 @@ import {
   cleanMusicTitle,
   isAudioFileName,
   removeAudioFile,
+  removeVoiceCache,
   saveAudioFile,
 } from '../../lib/music-library.js';
 
 const router = Router();
+
+// ─── کتابخانهٔ مشترک ─────────────────────────
+// آهنگ‌ها به هیچ رباتی نمی‌چسبند: هر ربات فعالی از همان فهرست پخش می‌کند.
+// لیست، آپلود ویرایش و حذف همه بدون botId کار می‌کنند و فقط «پخش در گروه» به
+// رباتِ آن گروه نیاز دارد.
 
 /** حالت «در حال پخش» بیشتر از این مدت معتبر نیست (ربات ری‌استارت شده باشد) */
 const NOW_PLAYING_WINDOW_MS = 3 * 60 * 60_000;
@@ -25,7 +28,7 @@ const NOW_PLAYING_WINDOW_MS = 3 * 60 * 60_000;
 async function maxUploadBytes(): Promise<number> {
   const configured = await getSettingNumber('music_max_mb');
   const mb = configured > 0 ? configured : MUSIC_DEFAULT_MAX_MB;
-  // سقف سخت ۲۰ مگابایت: بدنهٔ base64 از محدودیت ۴۵ مگابایت API رد نشود
+  // سقف سخت ۲۰ مگابایت: بدنهٔ base64 از محدودیت ۴۵ مگابایت بدنهٔ API رد نشود
   return Math.min(Math.max(1, mb), 20) * 1024 * 1024;
 }
 
@@ -33,18 +36,14 @@ async function maxUploadBytes(): Promise<number> {
 function serializeTrack(track: any) {
   return {
     id: track.id,
-    botId: track.botId,
-    botName: track.bot?.name ?? null,
     title: track.title,
     artist: track.artist,
-    kind: track.kind,
     duration: track.duration,
     fileSize: track.fileSize,
     mimeType: track.mimeType,
     playCount: track.playCount,
     isActive: track.isActive,
     source: track.source,
-    hasFileId: Boolean(track.fileId),
     hasLocalFile: audioFileExists(track.filePath),
     createdAt: track.createdAt,
   };
@@ -53,12 +52,7 @@ function serializeTrack(track: any) {
 // ─── فهرست آهنگ‌ها ────────────────────────────
 router.get('/', async (req: AuthRequest, res: Response) => {
   try {
-    const botIdRaw = req.query?.botId;
-    const botId =
-      botIdRaw !== undefined && botIdRaw !== '' ? parseInt(String(botIdRaw), 10) : undefined;
-
     const where: any = {};
-    if (botId && Number.isInteger(botId)) where.botId = botId;
 
     const search = String(req.query?.search || '').trim();
     if (search) {
@@ -71,7 +65,6 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     const tracks = await prisma.musicTrack.findMany({
       where,
       orderBy: { createdAt: 'desc' },
-      include: { bot: { select: { name: true } } },
       take: 500,
     });
 
@@ -83,7 +76,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
 });
 
 // ─── آمار موزیک + آنچه همین حالا پخش می‌شود ──
-router.get('/stats', async (req: AuthRequest, res: Response) => {
+router.get('/stats', async (_req: AuthRequest, res: Response) => {
   try {
     const since = new Date(Date.now() - NOW_PLAYING_WINDOW_MS);
     const today = new Date();
@@ -97,13 +90,17 @@ router.get('/stats', async (req: AuthRequest, res: Response) => {
         orderBy: { startedAt: 'desc' },
         take: 50,
         include: {
-          track: { select: { title: true, artist: true, kind: true } },
+          track: { select: { title: true, artist: true } },
           group: { select: { title: true, username: true, memberCount: true } },
         },
       }),
       prisma.musicTrack.count(),
       prisma.musicTrack.count({ where: { isActive: true } }),
     ]);
+
+    // MusicPlay فقط به گروه وابسته است، نه به ربات؛ نام ربات جدا خوانده می‌شود
+    const bots = await prisma.bot.findMany({ select: { id: true, name: true } });
+    const botNameOf = new Map(bots.map((bot) => [bot.id, bot.name]));
 
     res.json({
       totalPlays,
@@ -114,6 +111,7 @@ router.get('/stats', async (req: AuthRequest, res: Response) => {
       nowPlaying: nowPlaying.map((play) => ({
         id: play.id,
         botId: play.botId,
+        botName: botNameOf.get(play.botId) || null,
         chatId: play.chatId.toString(),
         groupTitle: play.group?.title || 'گروه ناشناس',
         groupUsername: play.group?.username || null,
@@ -121,7 +119,6 @@ router.get('/stats', async (req: AuthRequest, res: Response) => {
         title: play.track?.title || '—',
         artist: play.track?.artist || null,
         requestName: play.requestName,
-        mode: play.mode,
         startedAt: play.startedAt,
       })),
     });
@@ -142,11 +139,8 @@ router.post('/reconcile', async (_req: AuthRequest, res: Response) => {
   }
 });
 
-// ─── گروه‌ها و محل پخش آهنگ در هر گروه ───────
-// music_mode روی group_chats: default از تنظیم سراسری پیروی می‌کند،
-// chat پیام صوتی در چت و voice استریم داخل ویس‌کال همان گروه.
-const PLAYBACK_MODES = new Set(['default', 'chat', 'voice']);
-
+// ─── گروه‌هایی که می‌توان در آن‌ها پخش کرد ────
+// هر گروه با ربات خودش فهرست می‌شود؛ پخش از همان ربات انجام می‌شود.
 router.get('/groups', async (req: AuthRequest, res: Response) => {
   try {
     const botIdRaw = req.query?.botId;
@@ -168,17 +162,19 @@ router.get('/groups', async (req: AuthRequest, res: Response) => {
         username: true,
         chatType: true,
         memberCount: true,
-        musicMode: true,
         lastSeenAt: true,
       },
     });
+
+    const bots = await prisma.bot.findMany({ select: { id: true, name: true } });
+    const nameOf = new Map(bots.map((bot) => [bot.id, bot.name]));
 
     res.json({
       total: groups.length,
       groups: groups.map((group) => ({
         ...group,
         chatId: group.chatId.toString(),
-        musicMode: PLAYBACK_MODES.has(group.musicMode) ? group.musicMode : 'default',
+        botName: nameOf.get(group.botId) || null,
       })),
     });
   } catch (error) {
@@ -187,62 +183,12 @@ router.get('/groups', async (req: AuthRequest, res: Response) => {
   }
 });
 
-router.patch('/groups/:id', async (req: AuthRequest, res: Response) => {
-  try {
-    const id = parseInt(String(req.params.id), 10);
-    if (!Number.isInteger(id)) return res.status(400).json({ error: 'شناسه نامعتبر است' });
-
-    const mode = String(req.body?.mode ?? '').trim().toLowerCase();
-    if (!PLAYBACK_MODES.has(mode)) {
-      return res.status(400).json({ error: 'حالت پخش باید default، chat یا voice باشد' });
-    }
-
-    const group = await prisma.groupChat
-      .findUnique({
-        where: { id },
-        select: { id: true, chatId: true, musicMode: true },
-      })
-      .catch(() => null);
-    if (!group) return res.status(404).json({ error: 'گروه پیدا نشد' });
-
-    if (group.musicMode !== mode) {
-      await prisma.groupChat.update({ where: { id }, data: { musicMode: mode } });
-    }
-
-    // وقتی گروه از ویس‌کال به چت برمی‌گردد، استریم باز مانده باید بسته شود تا
-    // دو مسیر هم‌زمان صدا ندهند.
-    if (mode !== 'voice') {
-      await stopVoiceCall(Number(group.chatId)).catch(() => undefined);
-    }
-
-    const updated = await prisma.groupChat.findUnique({
-      where: { id },
-      select: { id: true, botId: true, chatId: true, title: true, musicMode: true },
-    });
-
-    res.json({
-      success: true,
-      group: updated ? { ...updated, chatId: updated.chatId.toString() } : null,
-    });
-  } catch (error) {
-    console.error('Music group mode error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// ─── آپلود آهنگ از پنل ───────────────────────
-// فایل به‌صورت base64 در JSON می‌آید (بدون وابستگی multer). آهنگ روی volume
-// مشترک ذخیره می‌شود؛ file_id تلگرام در اولین پخش ساخته و ذخیره می‌شود.
+// ─── آپلود آهنگ به کتابخانهٔ مشترک ───────────
+// فایل به‌صورت base64 در JSON می‌آید (بدون وابستگی multer) و روی volume مشترک
+// ذخیره می‌شود؛ قالب ویس در اولین پخش با ffmpeg ساخته می‌شود.
 router.post('/', async (req: AuthRequest, res: Response) => {
   try {
-    const { botId: botIdRaw, title, artist, fileName, mimeType, dataBase64 } = req.body ?? {};
-    const botId = parseInt(String(botIdRaw ?? ''), 10);
-
-    if (!Number.isInteger(botId)) {
-      return res.status(400).json({ error: 'ربات را انتخاب کنید' });
-    }
-    const bot = await prisma.bot.findUnique({ where: { id: botId } });
-    if (!bot) return res.status(404).json({ error: 'ربات پیدا نشد' });
+    const { title, artist, fileName, mimeType, dataBase64 } = req.body ?? {};
 
     if (!dataBase64 || typeof dataBase64 !== 'string') {
       return res.status(400).json({ error: 'فایل آهنگ ارسال نشده است' });
@@ -269,7 +215,7 @@ router.post('/', async (req: AuthRequest, res: Response) => {
     const ext = audioExtension(mimeType, fileName);
     let filePath: string;
     try {
-      filePath = saveAudioFile(botId, buffer, ext);
+      filePath = saveAudioFile(buffer, ext);
     } catch (error) {
       console.error('Music save error:', error);
       return res.status(500).json({ error: 'ذخیرهٔ فایل روی سرور ناموفق بود' });
@@ -277,19 +223,16 @@ router.post('/', async (req: AuthRequest, res: Response) => {
 
     const track = await prisma.musicTrack.create({
       data: {
-        botId,
         title: cleanMusicTitle(title || fileName || 'آهنگ'),
         artist: artist ? String(artist).slice(0, 64) : null,
-        fileId: null,
         filePath,
         fileSize: buffer.length,
         mimeType: mimeType || `audio/${ext}`,
-        kind: 'audio',
         source: 'panel',
       },
     });
 
-    res.json({ success: true, track: serializeTrack({ ...track, bot }) });
+    res.json({ success: true, track: serializeTrack(track) });
   } catch (error) {
     console.error('Music upload error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -312,11 +255,7 @@ router.patch('/:id', async (req: AuthRequest, res: Response) => {
     if (typeof req.body?.artist === 'string') data.artist = req.body.artist.slice(0, 64) || null;
     if (typeof req.body?.isActive === 'boolean') data.isActive = req.body.isActive;
 
-    const track = await prisma.musicTrack.update({
-      where: { id },
-      data,
-      include: { bot: { select: { name: true } } },
-    });
+    const track = await prisma.musicTrack.update({ where: { id }, data });
     res.json({ success: true, track: serializeTrack(track) });
   } catch (error) {
     console.error('Music update error:', error);
@@ -335,6 +274,8 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
 
     await prisma.musicTrack.delete({ where: { id } });
     const removedFile = removeAudioFile(track.filePath);
+    // خروجی ویسِ تبدیل‌شدهٔ همان آهنگ دیگر بی‌استفاده است
+    removeVoiceCache(id);
 
     res.json({ success: true, removedFile });
   } catch (error) {
@@ -343,49 +284,48 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
   }
 });
 
-// ─── پخش در گروه از پنل (آزمایش) ────────────
-// ربات آهنگ را در گروه انتخاب‌شده پخش می‌کند؛ همان مسیری که دکمهٔ گروه می‌رود.
+// ─── پخش در گروه از پنل ─────────────────────
+// همان مسیری که دستور /play در گروه می‌رود: آهنگ به‌شکل ویس با کپشن نام آهنگ و
+// آیدی ربات فرستاده می‌شود، بدون متن اضافه و بدون دکمه.
 router.post('/:id/play', async (req: AuthRequest, res: Response) => {
   try {
     const id = parseInt(String(req.params.id), 10);
     const chatId = String(req.body?.chatId || '').trim();
+    const botIdRaw = req.body?.botId;
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'شناسه نامعتبر است' });
     if (!chatId) return res.status(400).json({ error: 'گروه را انتخاب کنید' });
 
     const track = await prisma.musicTrack.findUnique({ where: { id } });
     if (!track) return res.status(404).json({ error: 'آهنگ پیدا نشد' });
 
-    const bot = getBotInstance(track.botId);
+    // ربات از گروه انتخاب می‌شود؛ اگر پنل مستقیم ربات داد همان رعایت می‌شود
+    let botId = botIdRaw === undefined || botIdRaw === null ? NaN : parseInt(String(botIdRaw), 10);
+    if (!Number.isInteger(botId)) {
+      const group = await prisma.groupChat
+        .findFirst({ where: { chatId: BigInt(chatId) }, select: { botId: true } })
+        .catch(() => null);
+      botId = Number(group?.botId ?? NaN);
+    }
+    if (!Number.isInteger(botId)) {
+      return res.status(400).json({ error: 'ربات این گروه مشخص نیست' });
+    }
+
+    const bot = getBotInstance(botId);
     if (!bot) return res.status(400).json({ error: 'ربات مربوطه فعال نیست' });
 
-    const localFile = audioFileExists(track.filePath) ? (track.filePath as string) : null;
-    const payload: any =
-      track.fileId ||
-      (localFile ? { source: fs.createReadStream(localFile), filename: path.basename(localFile) } : null);
-    if (!payload) return res.status(400).json({ error: 'فایل این آهنگ روی سرور نیست' });
-
-    const sent: any =
-      track.kind === 'document'
-        ? await bot.telegram.sendDocument(chatId, payload, { caption: `🎵 ${track.title}` })
-        : await bot.telegram.sendAudio(chatId, payload, {
-            title: track.title,
-            ...(track.artist ? { performer: track.artist.slice(0, 64) } : {}),
-          });
-
-    const fileId = sent?.audio?.file_id || sent?.document?.file_id;
-    if (fileId && !track.fileId) {
-      await prisma.musicTrack.update({ where: { id }, data: { fileId } }).catch(() => undefined);
-    }
-    await prisma.musicTrack.update({ where: { id }, data: { playCount: { increment: 1 } } }).catch(() => undefined);
-    await registerMusicPlay({
-      trackId: id,
-      botId: track.botId,
-      chatId: BigInt(chatId),
-      messageId: typeof sent?.message_id === 'number' ? sent.message_id : null,
-      status: 'PLAYING',
+    const result = await playTrackInChat({
+      telegram: bot.telegram,
+      botId,
+      chatId,
+      track,
+      requestName: 'پنل مدیریت',
     });
 
-    res.json({ success: true, messageId: sent?.message_id });
+    if (!result.ok) {
+      return res.status(400).json({ error: result.reason || 'پخش آهنگ ناموفق بود' });
+    }
+
+    res.json({ success: true, messageId: result.messageId });
   } catch (error: any) {
     console.error('Music panel play error:', error?.description || error?.message || error);
     res.status(500).json({ error: error?.description || 'پخش آهنگ ناموفق بود' });

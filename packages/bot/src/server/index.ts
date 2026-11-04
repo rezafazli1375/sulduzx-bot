@@ -19,7 +19,6 @@ import { configsRouter } from './routes/configs.js';
 import { ytdlpRouter } from './routes/ytdlp.js';
 import { gamesRouter } from './routes/games.js';
 import { musicRouter } from './routes/music.js';
-import { voiceRouter } from './routes/voice.js';
 import { authenticateToken } from './middleware/auth.js';
 
 export function startServer() {
@@ -53,7 +52,6 @@ export function startServer() {
   app.use('/api/ytdlp', ytdlpRouter);
   app.use('/api/games', gamesRouter);
   app.use('/api/music', musicRouter);
-  app.use('/api/voice', voiceRouter);
 
   app.listen(port, () => {
     console.log(`Admin API server running on http://localhost:${port}`);

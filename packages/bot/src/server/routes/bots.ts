@@ -2,11 +2,24 @@ import { Router, Response } from 'express';
 import { Telegraf } from 'telegraf';
 import { prisma } from '../../lib/prisma.js';
 import { AuthRequest } from '../middleware/auth.js';
-import { reloadBots, getBotRuntime } from '../../bot/index.js';
+import { reloadBots, getBotRuntime, resyncBotCommands } from '../../bot/index.js';
+import { clearBotAccessCache, normalizeBlockedFeatures, normalizeBlockedGames } from '../../lib/bot-access.js';
 
 const router = Router();
 
 const TOKEN_RE = /^\d{5,}:[A-Za-z0-9_-]{20,}$/;
+
+/**
+ * دسترسی‌های ارسال‌شده از پنل به کلیدهای شناخته‌شده محدود می‌شوند؛ کلیدهای
+ * تکراری و ناشناخته حذف می‌شوند و فهرست خالی یعنی «همه‌چیز آزاد».
+ */
+function accessData(body: any): { blockedFeatures: string[]; blockedGames: string[] } | null {
+  if (body?.blockedFeatures === undefined && body?.blockedGames === undefined) return null;
+  return {
+    blockedFeatures: normalizeBlockedFeatures(body?.blockedFeatures),
+    blockedGames: normalizeBlockedGames(body?.blockedGames),
+  };
+}
 
 async function resolveUsername(token: string): Promise<string | undefined> {
   const probe = new Telegraf(token);
@@ -77,8 +90,9 @@ router.post('/', async (req: AuthRequest, res: Response) => {
       });
     }
 
+    // دسترسی‌ها ارسال نشدند؟ فهرست خالی = همه‌چیز آزاد (تنظیم پیش‌فرض schema)
     const bot = await prisma.bot.create({
-      data: { name, token, username, isActive: Boolean(isActive), sortOrder },
+      data: { name, token, username, isActive: Boolean(isActive), sortOrder, ...(accessData(req.body) ?? {}) },
     });
 
     await reloadBots();
@@ -142,7 +156,19 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
       }
     }
 
+    // دسترسی‌های ربات: فهرست کلیدهایی که این ربات مجاز نیست
+    const access = accessData(req.body);
+    if (access) Object.assign(data, access);
+
     const bot = await prisma.bot.update({ where: { id }, data });
+
+    // کش دسترسی بی‌درنگ پاک می‌شود تا ذخیرهٔ پنل از همان لحظه اثر کند، و منوی
+    // دستورهای تلگرام همان ربات از نو ساخته می‌شود
+    if (access) {
+      clearBotAccessCache(id);
+      await resyncBotCommands(id).catch((error) => console.error('Resync commands error:', error));
+    }
+
     await reloadBots();
     res.json(await serialize(bot));
   } catch (error) {
@@ -170,6 +196,7 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
     }
 
     await prisma.bot.delete({ where: { id } });
+    clearBotAccessCache(id);
     await reloadBots();
     res.json({ success: true });
   } catch (error: any) {

@@ -2,6 +2,9 @@ import { Context, Telegraf } from 'telegraf';
 import { prisma } from './prisma.js';
 import { getBotId } from './bot-context.js';
 import { telegramIdOf } from './user.js';
+// چرخهٔ import با bot-access عمدی است: هر دو طرف فقط داخل بدنهٔ توابع استفاده
+// می‌شوند، نه در زمان بارشدن ماژول، پس چرخه مشکلی نمی‌سازد.
+import { isFeatureAllowed } from './bot-access.js';
 
 export const FEATURE_KEYS = [
   'free_config',
@@ -78,8 +81,6 @@ const COMMAND_FEATURES: Record<string, FeatureKey> = {
   '/support': 'support',
   '/music': 'music',
   '/play': 'music',
-  '/next': 'music',
-  '/stop': 'music',
 };
 
 const WORD_DOC_PATTERN = /\.(docx?|odt|rtf)$/i;
@@ -127,9 +128,26 @@ export function registerFeatureGuard(bot: Telegraf) {
     const key = featureKeyForCtx(ctx);
     if (!key) return next();
 
+    // لایهٔ ربات: در پنل، بخش «ربات‌ها» تعیین می‌کند هر ربات اصلاً به کدام
+    // بخش‌ها دسترسی داشته باشد. این محدودیت از محدودیت کاربر عمومی‌تر است و
+    // پیش‌تر بررسی می‌شود (از کش می‌خواند).
+    const botId = getBotId(ctx);
+    if (!(await isFeatureAllowed(botId, key))) {
+      if ((ctx as any).callbackQuery) {
+        await ctx
+          .answerCbQuery('⛔️ این بخش برای این ربات در پنل غیرفعال شده است', { show_alert: true })
+          .catch(() => undefined);
+        return;
+      }
+      await ctx
+        .reply('⛔️ این بخش برای این ربات توسط مدیریت غیرفعال شده است.')
+        .catch(() => undefined);
+      return;
+    }
+
     const user = await prisma.user.findUnique({
       where: {
-        botId_telegramId: { botId: getBotId(ctx), telegramId: telegramIdOf(ctx) },
+        botId_telegramId: { botId, telegramId: telegramIdOf(ctx) },
       },
       select: { blockedFeatures: true, isBlocked: true },
     });

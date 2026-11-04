@@ -10,8 +10,30 @@ export const FEATURE_LABELS: { key: string; label: string }[] = [
   { key: 'video_to_mp3', label: 'ویدیو به MP3' },
   { key: 'server_status', label: 'وضعیت سرور' },
   { key: 'games', label: 'بازی‌ها' },
+  { key: 'music', label: 'پخش موزیک در گروه' },
   { key: 'support', label: 'پشتیبانی' },
 ];
+
+/**
+ * فقط برای صفحهٔ «ربات‌ها»: در برابر هر قابلیت یک تیک هست و بازی‌ها یکی‌یکی
+ * هم قابل خاموش‌کردن هستند.
+ */
+export const BOT_FEATURE_LABELS = FEATURE_LABELS;
+
+/** بازی‌ها یکی‌یکی قابل خاموش‌کردن برای هر ربات هستند */
+export const GAME_LABELS: { key: string; label: string }[] = [
+  { key: 'truth_or_dare', label: 'جرعت و حقیقت' },
+  { key: 'tic_tac_toe', label: 'دوز' },
+  { key: 'minesweeper', label: 'مین‌روب' },
+  { key: 'wordle', label: 'کلمه‌یاب' },
+  { key: 'hokm', label: 'حکم' },
+  { key: 'mench', label: 'منچ' },
+  { key: 'scala', label: 'اسکالا' },
+];
+
+export function gameLabel(key: string) {
+  return GAME_LABELS.find((item) => item.key === key)?.label || key;
+}
 
 export function featureLabel(key: string) {
   return FEATURE_LABELS.find((item) => item.key === key)?.label || key;
