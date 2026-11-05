@@ -29,7 +29,7 @@ const GAME_DEFS = [
     key: 'game_minesweeper_enabled',
     action: 'game_minesweeper',
     button: '💣 مین‌روب',
-    desc: '💣 *مین‌روب* — مین‌ها را پیدا نکن! کندن، پرچم‌گذاری و سه سطح سختی (/meen)',
+    desc: '💣 *مین‌روب* — دوئل دو نفره روی تختهٔ ۹×۹ با ۲۱ مین؛ هرکس مین بیشتری پیدا کند برنده (/meen)',
   },
   {
     game: 'wordle',

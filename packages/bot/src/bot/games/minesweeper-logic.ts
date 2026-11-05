@@ -2,50 +2,41 @@
 //
 // The rule set is the one Iranian Telegram players know (documented for
 // @minroobot, for the competitive variant MineSeeker, and mirrored by the
-// open-source TaymazKH/minesweeper-bot):
+// open-source TaymazKH/minesweeper-bot), trimmed to a two-player duel:
 //
-//  • Players alternate taps on one shared board.
+//  • Two players alternate taps on one shared board (🔴 red vs 🔵 blue).
 //  • Tapping a MINE is the goal: the cell is marked with the tapper's colour,
 //    the tapper scores +1 and keeps the turn (a bonus tap).
 //  • Tapping a SAFE cell opens it with its adjacent-mine number (a 0 opens the
-//    whole empty region) and the turn passes to the next player.
+//    whole empty region) and the turn passes to the other player.
 //  • Nobody loses lives. The winner is whoever marked the most mines.
+//  • One board only — the hard 9×9 / 21-mine field. The easy and medium
+//    boards were dropped on the owner's request.
 
-export type MsColour = 'red' | 'blue' | 'green' | 'yellow' | 'purple' | 'brown';
+export type MsColour = 'red' | 'blue';
 
-export const MS_COLORS: MsColour[] = ['red', 'blue', 'green', 'yellow', 'purple', 'brown'];
+export const MS_COLORS: MsColour[] = ['red', 'blue'];
 
 /** نقطهٔ رنگی بازیکن (برای نوبت و فهرست امتیاز) */
 export const MS_EMOJI: Record<MsColour, string> = {
   red: '🔴',
   blue: '🔵',
-  green: '🟢',
-  yellow: '🟡',
-  purple: '🟣',
-  brown: '🟤',
 };
 
-/** مربع رنگی که روی خانهٔ مین نشسته (علامت «این مین مال من است») */
-export const MS_MARK: Record<MsColour, string> = {
-  red: '🟥',
-  blue: '🟦',
-  green: '🟩',
-  yellow: '🟨',
-  purple: '🟪',
-  brown: '🟫',
-};
+/**
+ * علامت روی خانهٔ مین: همان نقطهٔ رنگیِ بازیکن (نه مربعِ رنگی).
+ * از MS_EMOJI مشتق می‌شود تا رنگِ نوبت و رنگِ علامت هیچ‌وقت از هم جدا نشوند.
+ */
+export const MS_MARK: Record<MsColour, string> = { ...MS_EMOJI };
 
 export const MS_NAME_FA: Record<MsColour, string> = {
   red: 'قرمز',
   blue: 'آبی',
-  green: 'سبز',
-  yellow: 'زرد',
-  purple: 'بنفش',
-  brown: 'قهوه‌ای',
 };
 
+/** بازی یک duel دو نفره است: دو صندلی، نه بیشتر */
 export const MIN_MS_PLAYERS = 2;
-export const MAX_MS_PLAYERS = 6;
+export const MAX_MS_PLAYERS = 2;
 
 export function colourForSeat(seat: number): MsColour {
   return MS_COLORS[seat % MS_COLORS.length];
@@ -59,7 +50,7 @@ export interface MsCell {
   adjacent: number;
 }
 
-export type MsDifficultyKey = 'easy' | 'medium' | 'hard';
+export type MsDifficultyKey = 'hard';
 
 export interface MsDifficulty {
   key: MsDifficultyKey;
@@ -71,16 +62,18 @@ export interface MsDifficulty {
   bonus: number;
 }
 
-// تعداد خانه‌ها زیر ۱۰۰ می‌ماند تا محدودیت دکمه‌های تلگرام رعایت شود.
-// تعداد مین‌ها فرد است تا در بازی دو نفره صفحه نصف‌نصف نشود.
+// تنها یک تخته: ۹×۹ با ۲۱ مین. آسان و متوسط طبق خواستهٔ مالک حذف شدند.
+// تعداد خانه‌ها زیر ۱۰۰ می‌ماند تا محدودیت دکمه‌های تلگرام رعایت شود، و
+// تعداد مین‌ها فرد است تا در دوئل دو نفره صفحه نصف‌نصف نشود.
 export const MS_DIFFICULTIES: MsDifficulty[] = [
-  { key: 'easy', label: 'آسان', rows: 7, cols: 6, mines: 9, bonus: 30 },
-  { key: 'medium', label: 'متوسط', rows: 8, cols: 8, mines: 15, bonus: 45 },
   { key: 'hard', label: 'سخت', rows: 9, cols: 9, mines: 21, bonus: 60 },
 ];
 
+/** تختهٔ پیش‌فرض و تنها تختهٔ بازی */
+export const MS_BOARD: MsDifficulty = MS_DIFFICULTIES[0];
+
 export function getMsDifficulty(key: MsDifficultyKey): MsDifficulty {
-  return MS_DIFFICULTIES.find((d) => d.key === key) ?? MS_DIFFICULTIES[0];
+  return MS_DIFFICULTIES.find((d) => d.key === key) ?? MS_BOARD;
 }
 
 const NEIGHBOURS: [number, number][] = [
@@ -294,6 +287,46 @@ export function msBoardState(
   };
 }
 
+export interface MsNeighbourMines {
+  /** همهٔ مین‌های اطراف این خانه — پیدا‌شده و پیدا‌نشده */
+  total: number;
+  /** آن‌هایی که با رنگ یک بازیکن علامت خورده‌اند */
+  found: number;
+  /** آن‌هایی که هنوز زیر ◽ پنهان‌اند */
+  hidden: number;
+}
+
+/**
+ * شمارش مین‌های اطراف یک خانه، تفکیک‌شده به «پیدا شده» و «هنوز پنهان».
+ * همین پاسخ «عدد این خانه غلط است» را می‌دهد: عدد همهٔ مین‌های اطراف را
+ * می‌شمارد، پس تا وقتی مینی پیدا نشده، خانه‌اش ◽ می‌ماند و عدد بزرگ‌تر از
+ * مین‌های دیدنی است.
+ */
+export function msNeighbourMines(
+  board: MsCell[][],
+  rows: number,
+  cols: number,
+  r: number,
+  c: number
+): MsNeighbourMines | null {
+  const cell = board[r]?.[c];
+  if (!cell || cell.isMine) return null;
+
+  let total = 0;
+  let found = 0;
+  for (const [dr, dc] of NEIGHBOURS) {
+    const nr = r + dr;
+    const nc = c + dc;
+    if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
+    const next = board[nr][nc];
+    if (!next.isMine) continue;
+    total++;
+    if (next.foundBy !== null) found++;
+  }
+
+  return { total, found, hidden: total - found };
+}
+
 /** چند مینِ این صندلی روی تخته علامت خورده است */
 export function minesFoundBySeat(board: MsCell[][], seat: number): number {
   let count = 0;
@@ -351,7 +384,8 @@ export function rankMsStandings(standings: MsStanding[]): { ordered: MsStanding[
   return { ordered, draw };
 }
 
-export const MS_CELL_HIDDEN = '⬜';
+/** خانهٔ باز‌نشده: مربع کوچک (◽) تا تخته جمع‌وجورتر از ⬜ دربیاید */
+export const MS_CELL_HIDDEN = '◽';
 export const MS_CELL_EMPTY = '·';
 export const MS_CELL_MINE = '💣';
 
