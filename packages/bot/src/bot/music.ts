@@ -80,6 +80,27 @@ export function recentTracksOf(botId: number, chatId: number): number[] {
   return [...(memories.get(keyOf(botId, chatId))?.recent ?? [])];
 }
 
+/**
+ * ثبت یک آهنگ در خاطرهٔ تکرارهای همان گروه.
+ * پخش در ویس‌کال («رادیو») هم از همین خاطره استفاده می‌کند تا آهنگی که همین
+ * الان در ویس‌کال پخش شده، بلافاصله به‌شکل ویس در چت نیاید و برعکس.
+ */
+export function noteRecentTrack(botId: number, chatId: number, trackId: number): void {
+  const memory = memoryOf(botId, chatId);
+  memory.recent = [trackId, ...memory.recent.filter((id) => id !== trackId)].slice(0, MAX_RECENT);
+}
+
+/**
+ * آهنگ بعدی برای یک گروه (رادیوی ویس‌کال): همان انتخاب تصادفی کتابخانهٔ مشترک،
+ * با حذف آهنگ‌هایی که اخیراً در همین گروه پخش شده.
+ * `extraExclude` برای این است که یک آهنگ در همان تلاشِ پخش دوباره انتخاب نشود
+ * (مثلاً فایلش روی سرور نبوده و رد شده است).
+ */
+export async function pickTrackForGroup(botId: number, chatId: number, extraExclude: number[] = []) {
+  const recent = memoryOf(botId, chatId).recent;
+  return pickRandomTrack([...extraExclude, ...recent]);
+}
+
 /** برای تست/عیب‌یابی: عدد حافظه‌های گروهی باز */
 export function musicMemoryCount(): number {
   return memories.size;
@@ -294,8 +315,7 @@ export async function sendTrackAsVoice(input: {
   }
 
   // خاطرهٔ تکرار: آهنگ‌های اخیر در همین گروه دوباره انتخاب نشوند
-  const memory = memoryOf(botId, chatId);
-  memory.recent = [track.id, ...memory.recent.filter((id) => id !== track.id)].slice(0, MAX_RECENT);
+  noteRecentTrack(botId, chatId, track.id);
 
   return { ok: true, messageId };
 }

@@ -5,6 +5,7 @@ import { confirmFreeConfig } from './free-config.js';
 import { handleProxy } from './proxy.js';
 import { handleReferral } from './referral.js';
 import { handlePoints, handleDailyCheckin } from './points.js';
+import { handleRewards, handleRewardPick, redeemReward } from './points-rewards.js';
 import { handleServerStatus } from './server-status.js';
 import { handleShop, handleShopItem } from './shop.js';
 import { sendVoiceHelp } from './voice-convert.js';
@@ -14,6 +15,7 @@ import { mainMenuKeyboard } from '../lib/ui.js';
 import { getBotId } from '../lib/bot-context.js';
 import { findUserByCtx } from '../lib/user.js';
 import { handleGameAction, handleGameCheckMembership } from './games/index.js';
+import { handleVoiceCallCallback } from './voicecall.js';
 
 export function setupActionHandlers(bot: Telegraf) {
   bot.action('main_menu', async (ctx) => {
@@ -69,6 +71,28 @@ export function setupActionHandlers(bot: Telegraf) {
     await ctx.answerCbQuery();
     const user = await findUserByCtx(ctx);
     if (user) await handleDailyCheckin(ctx, user);
+  });
+
+  bot.action('reward:list', async (ctx) => {
+    await ctx.answerCbQuery();
+    const user = await findUserByCtx(ctx);
+    if (user) await handleRewards(ctx, user);
+  });
+
+  bot.action(/^reward:pick:(\d+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    const match = ctx.match as RegExpExecArray | undefined;
+    if (!match) return;
+    const user = await findUserByCtx(ctx);
+    if (user) await handleRewardPick(ctx, user, parseInt(match[1], 10));
+  });
+
+  bot.action(/^reward:do:(\d+)$/, async (ctx) => {
+    await ctx.answerCbQuery();
+    const match = ctx.match as RegExpExecArray | undefined;
+    if (!match) return;
+    const user = await findUserByCtx(ctx);
+    if (user) await redeemReward(ctx, user, parseInt(match[1], 10));
   });
 
   bot.action('downloader', async (ctx) => {
@@ -226,5 +250,11 @@ export function setupActionHandlers(bot: Telegraf) {
   });
 
   // پخش موزیک دکمه ندارد: آهنگ به‌شکل ویس در گروه می‌نشیند (bot/music.ts)
+
+  // رادیوی ویس‌کال: دکمه‌های کارت «آهنگ بعدی» و «توقف» برای همهٔ اعضای گروه
+  bot.action(/^vc_(next|stop):-?\d+$/, async (ctx) => {
+    const action = String(ctx.match || '').split('_')[1]?.split(':')[0];
+    await handleVoiceCallCallback(ctx, action === 'stop' ? 'stop' : 'next');
+  });
 
 }

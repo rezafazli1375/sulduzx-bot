@@ -9,72 +9,68 @@ import { mainMenuKeyboard } from '../../lib/ui.js';
 // ─── Game Definitions ────────────────────────
 // `game` کلید بازی در دسترسی‌های هر ربات است (bots.blocked_games) و `key`
 // تنظیم سراسری خاموش/روشن کردن همان بازی.
+// توضیح هر بازی عمداً یک خطی است: دستور مالک، متن‌های بلند بازی‌ها کوتاه شود.
 const GAME_DEFS = [
   {
     game: 'truth_or_dare',
     key: 'game_truth_or_dare_enabled',
     action: 'game_truth_or_dare',
     button: '🎭 جرعت و حقیقت',
-    desc: '🎭 *جرعت و حقیقت* — حقیقت بگو یا جرئت انجام بده!',
+    desc: '🎭 *جرعت و حقیقت* — حقیقت بگو یا جرئت انجام بده! (/joraat)',
   },
   {
     game: 'tic_tac_toe',
     key: 'game_tic_tac_toe_enabled',
     action: 'game_tic_tac_toe',
     button: '❌⭕ دوز',
-    desc: '❌⭕ *دوز* — کلاسیک ۳×۳ یا حرفه‌ای ۶×۷! (/dooz)',
+    desc: '❌⭕ *دوز* — ۳×۳ یا ۶×۷ (/dooz)',
   },
   {
     game: 'minesweeper',
     key: 'game_minesweeper_enabled',
     action: 'game_minesweeper',
     button: '💣 مین‌روب',
-    desc: '💣 *مین‌روب* — دوئل دو نفره روی تختهٔ ۹×۹ با ۲۱ مین؛ هرکس مین بیشتری پیدا کند برنده (/meen)',
+    desc: '💣 *مین‌روب* — دوئل ۹×۹، بیشترین مین برنده است (/meen)',
   },
   {
     game: 'wordle',
     key: 'game_wordle_enabled',
     action: 'game_wordle',
     button: '🔤 کلمه‌یاب',
-    desc: '🔤 *کلمه‌یاب* — کلمه را در گروه بنویس و زودتر از بقیه حدس بزن! (/kalame)',
+    desc: '🔤 *کلمه‌یاب* — زودتر از بقیه حدس بزن (/kalame)',
   },
   {
     game: 'hokm',
     key: 'game_hokm_enabled',
     action: 'game_hokm',
     button: '🃏 حکم',
-    desc: '🃏 *حکم* — چهارنفره، حاکم حکم را می‌زند و ۷ تریک برنده است (/hokm)',
+    desc: '🃏 *حکم* — ۴ نفره، کارت‌ها در گفتگوی خصوصی (/hokm)',
   },
   {
     game: 'mench',
     key: 'game_mench_enabled',
     action: 'game_mench',
     button: '🎲 منچ',
-    desc: '🎲 *منچ* — ۲ تا ۴ نفره؛ تاس بینداز، مهره حریف را بزن و زودتر به مرکز برس (/mench)',
+    desc: '🎲 *منچ* — ۲ تا ۴ نفره، زودتر به مرکز برس (/mench)',
   },
   {
     game: 'scala',
     key: 'game_scala_enabled',
     action: 'game_scala',
     button: '🇮🇹 اسکالا',
-    desc: '🇮🇹 *اسکالا* — ۲ تا ۴ نفره با ۱۰۸ کارت؛ سری و ست بچین، با ۴۰ امتیاز باز شو و بازی را ببند (/scala)',
+    desc: '🇮🇹 *اسکالا* — ۲ تا ۴ نفره، با ۴۰ باز شو و ببند (/scala)',
   },
 ];
 
 // ─── Group Check ─────────────────────────────
+// (همان چیزی که در games/utils.ts هست؛ بازی‌ها از utils.js وارد می‌شوند)
 export async function requireGroup(ctx: Context, gameName: string): Promise<boolean> {
   const chatType = ctx.chat?.type;
   if (chatType === 'private') {
     const botInfo = await ctx.telegram.getMe();
     await ctx.reply(
-      `🎮 *بازی ${gameName}*\n\n` +
-      `این بازی فقط در *گروه* قابل انجام است!\n\n` +
-      `📌 لطفاً ربات @${botInfo.username} را به گروه خود اضافه کنید و سپس بازی را شروع کنید.\n\n` +
-      `💡 برای اضافه کردن ربات به گروه:\n` +
-      `1️⃣ وارد گروه شوید\n` +
-      `2️⃣ به تنظیمات گروه بروید\n` +
-      `3️⃣ Add Members را بزنید\n` +
-      `4️⃣ @${botInfo.username} را جستجو و اضافه کنید`,
+      `🎮 *${gameName}* فقط در *گروه* بازی می‌شود.\n` +
+        `ربات @${botInfo.username} را به گروهتان اضافه کنید و آنجا بازی را شروع کنید.`,
       { parse_mode: 'Markdown', ...await mainMenuKeyboard() }
     );
     return false;
@@ -175,10 +171,7 @@ export async function handleGames(ctx: Context) {
   rows.push([Markup.button.callback('🔙 بازگشت', 'main_menu')]);
 
   await ctx.reply(
-    '🎮 *به بخش بازی‌ها خوش آمدید!*\n\n' +
-    'یکی از بازی‌های زیر را انتخاب کنید:\n\n' +
-    descriptions.join('\n') +
-    '\n\n💡 دستورهای سریع: /meen ، /dooz ، /kalame ، /hokm ، /mench ، /scala',
+    '🎮 *بازی‌ها* — یکی را انتخاب کنید:\n\n' + descriptions.join('\n'),
     { parse_mode: 'Markdown', ...Markup.inlineKeyboard(rows) }
   );
 }

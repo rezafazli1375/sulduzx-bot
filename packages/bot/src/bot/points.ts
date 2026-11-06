@@ -4,6 +4,7 @@ import { prisma } from '../lib/prisma.js';
 import { getSetting, getSettingBool } from '../lib/settings.js';
 import { getText } from '../lib/texts.js';
 import { mainMenuButton, mainMenuKeyboard } from '../lib/ui.js';
+import { rewardsEnabled } from './points-rewards.js';
 
 export async function handlePoints(ctx: Context, user: any) {
   const recentTransactions = await prisma.pointTransaction.findMany({
@@ -28,13 +29,19 @@ export async function handlePoints(ctx: Context, user: any) {
     message += `${await getText('points.empty')}\n\n`;
   }
 
-  await ctx.reply(
-    message,
-    Markup.inlineKeyboard([
-      [Markup.button.callback(await getText('points.checkin'), 'daily_checkin')],
-      [await mainMenuButton()],
-    ])
-  );
+  const rows: any[][] = [[Markup.button.callback(await getText('points.checkin'), 'daily_checkin')]];
+
+  // فقط وقتی واقعاً پاداشی برای گرفتن هست، دکمهٔ خرج کردن نشان داده شود
+  if (await rewardsEnabled()) {
+    const rewardCount = await prisma.pointReward.count({ where: { isActive: true } });
+    if (rewardCount > 0) {
+      rows.push([Markup.button.callback(`🎁 پاداش‌ها (${rewardCount})`, 'reward:list')]);
+    }
+  }
+
+  rows.push([await mainMenuButton()]);
+
+  await ctx.reply(message, Markup.inlineKeyboard(rows));
 }
 
 function getTypeLabel(type: string): string {

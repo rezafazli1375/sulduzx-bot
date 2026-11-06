@@ -38,6 +38,8 @@ interface BackupPayload {
     shopItems: any[];
     mtprotoProxies: any[];
     auditLogs: any[];
+    pointRewards: any[];
+    rewardRedemptions: any[];
   };
 }
 
@@ -57,6 +59,12 @@ const DATA_KEYS = [
   'mtprotoProxies',
   'auditLogs',
 ] as const;
+
+/**
+ * جداولی که در نسخه‌های قبلی وجود نداشتند. در بکاپ تازه نوشته می‌شوند ولی
+ * در بازگردانی اختیاری‌اند — تا بکاپ‌های قدیمی همچنان قابل استفاده بمانند.
+ */
+const OPTIONAL_KEYS = ['pointRewards', 'rewardRedemptions'] as const;
 
 function ensureDir() {
   if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
@@ -90,6 +98,8 @@ async function collectData(): Promise<BackupPayload> {
     shopItems,
     mtprotoProxies,
     auditLogs,
+    pointRewards,
+    rewardRedemptions,
   ] = await Promise.all([
     prisma.bot.findMany({ orderBy: { id: 'asc' } }),
     prisma.user.findMany({ orderBy: { id: 'asc' } }),
@@ -105,6 +115,8 @@ async function collectData(): Promise<BackupPayload> {
     prisma.shopItem.findMany({ orderBy: { id: 'asc' } }),
     prisma.mtprotoProxy.findMany({ orderBy: { id: 'asc' } }),
     prisma.auditLog.findMany({ orderBy: { id: 'asc' } }),
+    prisma.pointReward.findMany({ orderBy: { id: 'asc' } }),
+    prisma.rewardRedemption.findMany({ orderBy: { id: 'asc' } }),
   ]);
 
   const data = {
@@ -123,10 +135,12 @@ async function collectData(): Promise<BackupPayload> {
     shopItems,
     mtprotoProxies,
     auditLogs,
+    pointRewards,
+    rewardRedemptions,
   };
 
   const counts: BackupCounts = {};
-  for (const key of DATA_KEYS) counts[key] = (data[key] as any[]).length;
+  for (const key of [...DATA_KEYS, ...OPTIONAL_KEYS]) counts[key] = (data[key] as any[]).length;
 
   return {
     format: FORMAT,
@@ -183,6 +197,8 @@ async function resetSequences(tx: any) {
     'shop_items',
     'mtproto_proxies',
     'audit_logs',
+    'point_rewards',
+    'reward_redemptions',
   ];
 
   for (const table of tables) {
@@ -212,12 +228,17 @@ function validatePayload(body: any): BackupPayload {
 
 async function applyBackup(payload: BackupPayload) {
   const { data } = payload;
+  // بکاپ‌های قدیمی این دو کلید را ندارند؛ در آن حالت جدول‌های پاداش دست‌نخورده می‌مانند
+  const rewards = Array.isArray(data.pointRewards) ? data.pointRewards : null;
+  const redemptions = Array.isArray(data.rewardRedemptions) ? data.rewardRedemptions : null;
 
   await prisma.$transaction(
     async (tx) => {
       await tx.user.updateMany({ data: { referredBy: null } });
       await tx.userChannelStatus.deleteMany();
       await tx.configClaim.deleteMany();
+      if (redemptions) await tx.rewardRedemption.deleteMany();
+      if (rewards) await tx.pointReward.deleteMany();
       await tx.pointTransaction.deleteMany();
       await tx.download.deleteMany();
       await tx.ticket.deleteMany();
@@ -256,6 +277,11 @@ async function applyBackup(payload: BackupPayload) {
       await insertAll(data.pointTransactions, (batch) =>
         tx.pointTransaction.createMany({ data: batch })
       );
+      // پاداش‌ها قبل از خرج‌ها: سطر خرج به شناسه پاداش ارجاع دارد
+      if (rewards) await insertAll(rewards, (batch) => tx.pointReward.createMany({ data: batch }));
+      if (redemptions) {
+        await insertAll(redemptions, (batch) => tx.rewardRedemption.createMany({ data: batch }));
+      }
       await insertAll(data.settings, (batch) => tx.setting.createMany({ data: batch }));
       await insertAll(data.menuButtons, (batch) => tx.menuButton.createMany({ data: batch }));
       await insertAll(data.botTexts, (batch) => tx.botText.createMany({ data: batch }));

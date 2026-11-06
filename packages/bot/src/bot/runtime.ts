@@ -13,10 +13,12 @@ import { handleMenu } from './menu.js';
 import { handleGames, handleGameCommand } from './games/index.js';
 import { handleWordleText } from './games/wordle.js';
 import { handleMusicAudio, handleMusicCommand } from './music.js';
+import { handleVoiceCallCommand } from './voicecall.js';
 import { handleFreeConfig } from './free-config.js';
 import { handleProxy } from './proxy.js';
 import { handleReferral } from './referral.js';
 import { handlePoints, handleDailyCheckin } from './points.js';
+import { handleRewards } from './points-rewards.js';
 import { handleSupport, isSupportPending, handleSupportMessage } from './support.js';
 import { handleDownloader } from './downloader.js';
 import { handleServerStatus } from './server-status.js';
@@ -45,6 +47,7 @@ const GROUP_ALLOWED_COMMANDS = new Set([
   '/scala',
   '/music',
   '/play',
+  '/voicecall',
 ]);
 
 const DIRECT_GAME_COMMANDS: Array<[string, DirectGameKey]> = [
@@ -312,6 +315,13 @@ export function createBotInstance(botId: number, token: string): Telegraf {
     });
   }
 
+  // رادیوی ویس‌کال: /voicecall — یک حساب تلگرامی وارد گروه می‌شود و آهنگ تصادفی پخش می‌کند
+  bot.command('voicecall', async (ctx) => {
+    const user = await getUser(ctx);
+    if (!user) return;
+    await handleVoiceCallCommand(ctx);
+  });
+
   bot.command('menu', async (ctx) => {
     const user = await getUser(ctx);
     if (!user) return;
@@ -346,6 +356,13 @@ export function createBotInstance(botId: number, token: string): Telegraf {
     const user = await getUser(ctx);
     if (!user) return;
     await handleDailyCheckin(ctx, user);
+  });
+
+  // 🎁 پاداش‌ها — خرج کردن امتیاز و گرفتن کانفیگ
+  bot.command('reward', async (ctx) => {
+    const user = await getUser(ctx);
+    if (!user) return;
+    await handleRewards(ctx, user);
   });
 
   bot.command('support', async (ctx) => {

@@ -22,7 +22,10 @@ import {
   X,
   Gamepad2,
   Music,
+  Gift,
+  Info,
 } from 'lucide-react';
+import { PANEL_AUTHOR, PANEL_BUILD_TIME, PANEL_VERSION, faDateTime, useBotAppInfo } from '../lib/appInfo';
 
 const menuItems = [
   { path: '/', label: 'داشبورد', icon: LayoutDashboard },
@@ -34,6 +37,7 @@ const menuItems = [
   { path: '/proxies', label: 'پروکسی‌ها', icon: Shield },
   { path: '/users', label: 'کاربران', icon: Users },
   { path: '/configs', label: 'کانفیگ‌ها', icon: KeyRound },
+  { path: '/rewards', label: 'پاداش‌ها', icon: Gift },
   { path: '/games', label: 'بازی‌ها', icon: Gamepad2 },
   { path: '/music', label: 'موزیک', icon: Music },
   { path: '/tickets', label: 'تیکت‌ها', icon: Ticket },
@@ -46,6 +50,7 @@ const menuItems = [
 export default function Layout() {
   const { admin, logout } = useAuth();
   const location = useLocation();
+  const botInfo = useBotAppInfo();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
@@ -150,6 +155,36 @@ export default function Layout() {
               <LogOut size={16} />
               <span>خروج از حساب</span>
             </button>
+          </div>
+
+          {/* نسخهٔ برنامه و سازنده — شماره‌ها خودشان از package.json خوانده می‌شوند */}
+          <div className="mt-3 bg-slate-800/60 border border-slate-700 rounded-lg p-3">
+            <div className="flex items-center gap-2 mb-2 text-slate-300">
+              <Info size={14} className="shrink-0" />
+              <span className="text-[11px] font-semibold">نسخهٔ برنامه</span>
+              <span className="flex-1" />
+              <span
+                title={botInfo.reachable ? 'ربات در دسترس است' : 'ربات جواب نداد (/api/health)'}
+                className={`w-2 h-2 rounded-full shrink-0 ${
+                  botInfo.reachable ? 'bg-emerald-400' : 'bg-red-400'
+                }`}
+              />
+            </div>
+            <div className="space-y-1 text-[11px] leading-5 text-slate-400">
+              <p>
+                ربات: <span className="text-slate-200 font-medium">{botInfo.version ?? 'در دسترس نیست'}</span>
+              </p>
+              <p>
+                پنل: <span className="text-slate-200 font-medium">{PANEL_VERSION}</span>
+              </p>
+              <p>
+                ساخت: <span className="text-slate-200 font-medium">{faDateTime(botInfo.buildTime ?? (PANEL_BUILD_TIME || null))}</span>
+              </p>
+              <p>
+                سازنده:{' '}
+                <span className="text-slate-200 font-medium">{botInfo.author || PANEL_AUTHOR}</span>
+              </p>
+            </div>
           </div>
         </div>
       </aside>

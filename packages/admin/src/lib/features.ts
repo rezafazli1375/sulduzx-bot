@@ -11,6 +11,7 @@ export const FEATURE_LABELS: { key: string; label: string }[] = [
   { key: 'server_status', label: 'وضعیت سرور' },
   { key: 'games', label: 'بازی‌ها' },
   { key: 'music', label: 'پخش موزیک در گروه' },
+  { key: 'voicecall', label: 'رادیو در ویس‌کال گروه' },
   { key: 'support', label: 'پشتیبانی' },
 ];
 

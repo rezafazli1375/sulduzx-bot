@@ -19,7 +19,10 @@ import { configsRouter } from './routes/configs.js';
 import { ytdlpRouter } from './routes/ytdlp.js';
 import { gamesRouter } from './routes/games.js';
 import { musicRouter } from './routes/music.js';
+import { rewardsRouter } from './routes/rewards.js';
+import { voiceRouter } from './routes/voice.js';
 import { authenticateToken } from './middleware/auth.js';
+import { APP_INFO } from '../lib/app-info.js';
 
 export function startServer() {
   const app = express();
@@ -30,8 +33,19 @@ export function startServer() {
   app.use(express.json({ limit: '45mb' }));
 
   app.use('/api/auth', authRouter);
+  // سلامت + امضای نسخه: پنل مدیریت همین را نشان می‌دهد تا مالک بداند
+  // دقیقاً کدام بیلد روی سرور اجراست (عدد از package.json همین بسته).
   app.get('/api/health', (_req, res) => {
-    res.json({ ok: true, uptime: Math.round(process.uptime()) });
+    res.json({
+      ok: true,
+      uptime: Math.round(process.uptime()),
+      name: APP_INFO.name,
+      version: APP_INFO.version,
+      author: APP_INFO.author,
+      buildTime: APP_INFO.buildTime,
+      startedAt: APP_INFO.startedAt,
+      node: APP_INFO.node,
+    });
   });
   app.use('/api', authenticateToken);
   app.use('/api/dashboard', dashboardRouter);
@@ -52,6 +66,8 @@ export function startServer() {
   app.use('/api/ytdlp', ytdlpRouter);
   app.use('/api/games', gamesRouter);
   app.use('/api/music', musicRouter);
+  app.use('/api/rewards', rewardsRouter);
+  app.use('/api/voice', voiceRouter);
 
   app.listen(port, () => {
     console.log(`Admin API server running on http://localhost:${port}`);

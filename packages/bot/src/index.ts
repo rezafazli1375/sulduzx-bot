@@ -6,7 +6,10 @@ import { startServer } from './server/index.js';
 import { prisma } from './lib/prisma.js';
 import { ensureDefaultSettings } from './lib/settings.js';
 import { startMusicScheduler, stopMusicScheduler } from './lib/music-schedule.js';
+import { startRadioLoop, stopRadioLoop } from './bot/voicecall.js';
+import { startRewardNoticeSweeper, stopRewardNoticeSweeper } from './lib/reward-notice.js';
 import { ensureDefaultMenuButtons } from './bot/start.js';
+import { APP_INFO } from './lib/app-info.js';
 
 async function main() {
   console.log('Starting Sulduz Bot...');
@@ -19,14 +22,29 @@ async function main() {
 
   // Start the admin API first so the panel stays reachable even if a bot token is broken.
   await startServer();
-  console.log(`Admin API server started on port ${process.env.PORT || 3000}`);
+  // امضای نسخه در لاگ: با `docker logs` مشخص می‌شود دقیقاً کدام بیلد بالا آمده.
+  console.log(
+    `Admin API server started on port ${process.env.PORT || 3000} — ` +
+      `${APP_INFO.name} v${APP_INFO.version} · ${APP_INFO.author}` +
+      (APP_INFO.buildTime ? ` · build ${APP_INFO.buildTime}` : '')
+  );
 
   await startBots();
   console.log('Telegram bots started');
 
+  // جاروی اطلاع‌رسانی پاداش‌ها: بعد از استارت ربات‌ها، چون برای ارسال پیوی به
+  // نمونهٔ زندهٔ همان ربات نیاز دارد.
+  startRewardNoticeSweeper();
+
   // پخش خودکار موزیک: بعد از بالا آمدن ربات‌ها، چون ارسال‌ها به نمونهٔ زندهٔ
   // همان ربات نیاز دارند. اجرای جا‌مانده در زمان استارت هم همان لحظه بررسی می‌شود.
   startMusicScheduler();
+
+  // حلقهٔ رادیوی ویس‌کال: بعد از ربات‌ها، چون ویرایش کارت گروه به نمونهٔ زندهٔ
+  // همان ربات نیاز دارد. اگر سرویس sulduz-voice پایین باشد فقط خطا می‌گیرد و
+  // بعد از چند بار نرسیدن، رادیوهای باز را خاموش می‌کند.
+  startRadioLoop();
+  console.log('Voice-call radio loop started');
 }
 
 main().catch((err) => {
@@ -37,6 +55,8 @@ main().catch((err) => {
 process.on('SIGTERM', async () => {
   console.log('Shutting down...');
   stopMusicScheduler();
+  stopRadioLoop();
+  stopRewardNoticeSweeper();
   await stopAllBots();
   await prisma.$disconnect();
   process.exit(0);

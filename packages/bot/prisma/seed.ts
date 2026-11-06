@@ -38,6 +38,8 @@ async function main() {
     { key: 'referral_reward_points', value: '100', type: 'NUMBER', description: 'امتیاز هر رفرال' },
     { key: 'points_enabled', value: 'true', type: 'BOOLEAN', description: 'سیستم امتیاز فعال' },
     { key: 'daily_checkin_points', value: '10', type: 'NUMBER', description: 'امتیاز ورود روزانه' },
+    { key: 'reward_points_enabled', value: 'true', type: 'BOOLEAN', description: 'خرج کردن امتیاز و گرفتن کانفیگ' },
+    { key: 'reward_notice_enabled', value: 'true', type: 'BOOLEAN', description: 'اطلاع‌رسانی «می‌توانید پاداش بگیرید» در رسیدن به حد نصاب' },
     { key: 'support_enabled', value: 'true', type: 'BOOLEAN', description: 'پشتیبانی تیکت فعال' },
     { key: 'downloader_enabled', value: 'true', type: 'BOOLEAN', description: 'دانلودر فعال' },
     { key: 'max_download_size_mb', value: '50', type: 'NUMBER', description: 'حداکثر حجم دانلود (مگابایت)' },
@@ -64,6 +66,16 @@ async function main() {
       where: { key: setting.key },
       update: {},
       create: setting,
+    });
+  }
+
+  // دو سطح پاداش نمونه — فقط وقتی هیچ پاداشی تعریف نشده باشد (تا پاداش‌های ادمین دست‌نخورده بماند)
+  if ((await prisma.pointReward.count()) === 0) {
+    await prisma.pointReward.createMany({
+      data: [
+        { title: 'بستهٔ ۱ گیگی', costPoints: 100, dataGb: 1, days: 7, sortOrder: 1 },
+        { title: 'بستهٔ ۳ گیگی', costPoints: 250, dataGb: 3, days: 30, sortOrder: 2 },
+      ],
     });
   }
 

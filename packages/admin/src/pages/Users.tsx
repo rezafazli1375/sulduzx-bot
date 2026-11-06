@@ -9,6 +9,7 @@ import {
   SlidersHorizontal,
   X,
   KeyRound,
+  Star,
 } from 'lucide-react';
 import { FEATURE_LABELS, formatDateTime } from '../lib/features';
 
@@ -34,6 +35,7 @@ export default function Users() {
   const [error, setError] = useState('');
   const [bots, setBots] = useState<any[]>([]);
   const [botId, setBotId] = useState('');
+  const [sortByPoints, setSortByPoints] = useState(false);
 
   const [selected, setSelected] = useState<any | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -41,6 +43,10 @@ export default function Users() {
   const [form, setForm] = useState<Restrictions>(emptyRestrictions);
   const [saving, setSaving] = useState(false);
   const [modalError, setModalError] = useState('');
+  const [pointsDelta, setPointsDelta] = useState('');
+  const [pointsReason, setPointsReason] = useState('');
+  const [pointsSaving, setPointsSaving] = useState(false);
+  const [pointsMsg, setPointsMsg] = useState('');
 
   useEffect(() => {
     axios
@@ -59,7 +65,7 @@ export default function Users() {
 
   useEffect(() => {
     loadUsers();
-  }, [page, query, botId]);
+  }, [page, query, botId, sortByPoints]);
 
   const loadUsers = async () => {
     setLoading(true);
@@ -71,6 +77,7 @@ export default function Users() {
           limit: 20,
           search: query || undefined,
           botId: botId || undefined,
+          sort: sortByPoints ? 'points' : undefined,
         },
       });
       setUsers(res.data.users);
@@ -95,6 +102,9 @@ export default function Users() {
     setSelected(user);
     setClaims([]);
     setModalError('');
+    setPointsDelta('');
+    setPointsReason('');
+    setPointsMsg('');
     setForm({
       configBlocked: !!user.configBlocked,
       configQuotaOverride:
@@ -139,6 +149,36 @@ export default function Users() {
       setModalError(err.response?.data?.error || 'خطا در ذخیره محدودیت‌ها');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const adjustPoints = async () => {
+    if (!selected) return;
+    const amount = Number(pointsDelta);
+    if (!Number.isInteger(amount) || amount === 0) {
+      setPointsMsg('یک عدد صحیح (مثلاً ۵۰ یا ۲۰-) وارد کنید.');
+      return;
+    }
+    if (!pointsReason.trim()) {
+      setPointsMsg('ذکر دلیل الزامی است.');
+      return;
+    }
+    setPointsSaving(true);
+    setPointsMsg('');
+    try {
+      const res = await axios.post(`/api/users/${selected.id}/points`, {
+        amount,
+        reason: pointsReason.trim(),
+      });
+      setSelected((prev: any) => ({ ...prev, points: res.data.points }));
+      setPointsDelta('');
+      setPointsReason('');
+      setPointsMsg(`✅ امتیاز کاربر ${amount > 0 ? 'افزایش' : 'کاهش'} یافت.`);
+      loadUsers();
+    } catch (err: any) {
+      setPointsMsg(err.response?.data?.error || 'خطا در ثبت امتیاز');
+    } finally {
+      setPointsSaving(false);
     }
   };
 
@@ -191,6 +231,18 @@ export default function Users() {
             </option>
           ))}
         </select>
+        <label className="flex items-center gap-2 text-sm text-gray-700 px-3 py-2.5 bg-gray-50 rounded-lg">
+          <input
+            type="checkbox"
+            checked={sortByPoints}
+            onChange={(e) => {
+              setSortByPoints(e.target.checked);
+              setPage(1);
+            }}
+            className="w-4 h-4 accent-amber-600"
+          />
+          پربالانس‌ترین‌ها اول
+        </label>
       </div>
 
       <div className="table-container">
@@ -406,6 +458,46 @@ export default function Users() {
                     </label>
                   ))}
                 </div>
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                  <Star size={16} className="text-amber-500" />
+                  تنظیم امتیاز
+                </h4>
+                <p className="text-xs text-gray-500">
+                  موجودی فعلی: <span className="font-semibold text-gray-800">{selected.points ?? 0}</span> امتیاز.
+                  برای جایزه عدد مثبت و برای کسر عدد منفی بنویسید (مثلاً ۵۰ یا ۲۰-). هر تغییر با دلیل در
+                  گزارش امتیازها ثبت می‌شود.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <input
+                    type="number"
+                    value={pointsDelta}
+                    onChange={(e) => setPointsDelta(e.target.value)}
+                    placeholder="مثلاً ۵۰"
+                    className="input-field"
+                    dir="ltr"
+                  />
+                  <input
+                    type="text"
+                    value={pointsReason}
+                    onChange={(e) => setPointsReason(e.target.value)}
+                    placeholder="دلیل (مثلاً جایزه مسابقه)"
+                    className="input-field"
+                    maxLength={300}
+                  />
+                </div>
+                {pointsMsg && <p className="text-xs text-gray-600">{pointsMsg}</p>}
+                <button
+                  type="button"
+                  onClick={adjustPoints}
+                  disabled={pointsSaving || pointsDelta === '' || !pointsReason.trim()}
+                  className="btn-secondary disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {pointsSaving && <Loader2 size={14} className="animate-spin" />}
+                  ثبت تغییر امتیاز
+                </button>
               </div>
 
               <div className="space-y-2">

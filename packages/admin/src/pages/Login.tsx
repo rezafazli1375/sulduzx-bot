@@ -2,8 +2,10 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Zap, User, Lock, AlertCircle } from 'lucide-react';
+import { PANEL_AUTHOR, PANEL_VERSION, useBotAppInfo } from '../lib/appInfo';
 
 export default function Login() {
+  const botInfo = useBotAppInfo();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -103,8 +105,12 @@ export default function Login() {
           </form>
         </div>
         
-        <p className="text-center text-slate-500 text-xs mt-6">
-          ساخته شده با ❤️ برای سولدوز کلود
+        <p className="text-center text-slate-400 text-xs mt-6 leading-6">
+          <span className="font-medium text-slate-300">
+            نسخهٔ ربات {botInfo.version ?? '—'} · نسخهٔ پنل {PANEL_VERSION}
+          </span>
+          <br />
+          ساختهٔ {botInfo.author || PANEL_AUTHOR}
         </p>
       </div>
     </div>

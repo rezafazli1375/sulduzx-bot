@@ -233,7 +233,8 @@ export default function Settings() {
       title: 'امتیاز',
       icon: '⭐',
       color: 'from-amber-500 to-orange-600',
-      keys: ['points_enabled', 'daily_checkin_points'],
+      hint: 'پاداش‌ها یعنی خرج کردن امتیاز در ازای کانفیگ. سطح پاداش‌ها از بخش «پاداش‌ها» تعریف می‌شود؛ «خبردار کردن» به کاربرهایی که به حد نصاب رسیده‌اند پیامک می‌دهد.',
+      keys: ['points_enabled', 'daily_checkin_points', 'reward_points_enabled', 'reward_notice_enabled'],
     },
     {
       title: 'دانلودر',
@@ -301,6 +302,21 @@ export default function Settings() {
       keys: ['music_enabled', 'music_user_songs', 'music_max_mb', 'music_schedule_enabled'],
     },
     {
+      title: 'رادیو در ویس‌کال',
+      icon: '📻',
+      color: 'from-teal-500 to-cyan-600',
+      hint: 'وقتی کاربری در گروه /voicecall بزند، یک حساب تلگرام عادی (شمارهٔ مجازی که از بخش «موزیک» وارد کرده‌اید) به ویس‌کال گروه می‌رود و آهنگ‌های کتابخانهٔ موزیک را یکی‌بعدی تصادفی پخش می‌کند. روی کارت گروه دکمهٔ «⏭ آهنگ بعدی» و «⏹ توقف» هست و هر عضوی می‌تواند آن را خاموش کند. ثبت کلید API و وارد کردن شماره در همان بخش موزیک انجام می‌شود؛ دسترسی هر ربات به این بخش از صفحهٔ «ربات‌ها» تنظیم می‌شود.',
+      keys: [
+        'voicecall_enabled',
+        'voicecall_quality',
+        'voicecall_volume',
+        'voicecall_max_minutes',
+        'voicecall_max_streams',
+        'voicecall_auto_start',
+        'voicecall_account',
+      ],
+    },
+    {
       title: 'وضعیت سرور',
       icon: '🖥️',
       color: 'from-indigo-500 to-indigo-600',
@@ -313,6 +329,13 @@ export default function Settings() {
     { value: 'daily', label: 'روزانه' },
     { value: 'weekly', label: 'هفتگی' },
     { value: 'monthly', label: 'ماهانه' },
+  ];
+
+  const voiceQualityOptions = [
+    { value: 'low', label: 'کم — مصرف bandwidth کمتر' },
+    { value: 'medium', label: 'متوسط' },
+    { value: 'high', label: 'زیاد (پیش‌فرض)' },
+    { value: 'studio', label: 'استودیو — سنگین‌ترین' },
   ];
 
   return (
@@ -417,6 +440,16 @@ export default function Settings() {
                         className="input-field max-w-xs"
                       >
                         {limitTypeOptions.map((opt) => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </select>
+                    ) : key === 'voicecall_quality' ? (
+                      <select
+                        value={setting.value}
+                        onChange={(e) => handleChange(key, e.target.value)}
+                        className="input-field max-w-xs"
+                      >
+                        {voiceQualityOptions.map((opt) => (
                           <option key={opt.value} value={opt.value}>{opt.label}</option>
                         ))}
                       </select>

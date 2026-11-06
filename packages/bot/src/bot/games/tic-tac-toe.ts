@@ -116,17 +116,15 @@ function buildGameText(session: TttSession): string {
   lines.push('');
 
   if (session.status === 'choosing') {
-    lines.push('🎯 *حالت بازی را انتخاب کنید:*');
-    lines.push('• کلاسیک ۳×۳ — سریع و آسان');
-    lines.push('• حرفه‌ای ۶×۷ — پنج مهرهٔ پشت سر هم');
+    lines.push('🎯 *حالت:* کلاسیک ۳×۳ (سریع) یا حرفه‌ای ۶×۷ (پنج مهرهٔ پشت‌سرهم)');
     return lines.join('\n');
   }
 
   if (session.status === 'waiting') {
     if (!session.playerO) {
-      lines.push('⏳ منتظر بازیکن دوم… نفر دوم دکمهٔ «🎮 پیوستن به بازی» را بزند.');
+      lines.push('⏳ منتظر بازیکن دوم — دکمهٔ «🎮 پیوستن به بازی».');
     } else {
-      lines.push('✅ بازیکن دوم پیوست! شروع‌کننده دکمهٔ «▶️ شروع بازی» را بزند.');
+      lines.push('✅ بازیکن دوم پیوست! شروع‌کننده «▶️ شروع بازی» را بزند.');
     }
     return lines.join('\n');
   }

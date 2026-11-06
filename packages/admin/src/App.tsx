@@ -17,6 +17,7 @@ import Account from './pages/Account';
 import Configs from './pages/Configs';
 import Games from './pages/Games';
 import Music from './pages/Music';
+import Rewards from './pages/Rewards';
 import Layout from './components/Layout';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -46,6 +47,7 @@ function AppRoutes() {
         <Route path="proxies" element={<Proxies />} />
         <Route path="users" element={<Users />} />
         <Route path="configs" element={<Configs />} />
+        <Route path="rewards" element={<Rewards />} />
         <Route path="games" element={<Games />} />
         <Route path="music" element={<Music />} />
         <Route path="tickets" element={<Tickets />} />

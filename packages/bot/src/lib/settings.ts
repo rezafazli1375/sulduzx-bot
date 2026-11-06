@@ -160,6 +160,60 @@ const REQUIRED_DEFAULTS: Array<{
     type: 'BOOLEAN',
     description: 'پخش خودکار موزیک در ساعت‌های تعیین‌شده (بخش موزیک پنل) فعال',
   },
+  {
+    key: 'voicecall_enabled',
+    value: 'true',
+    type: 'BOOLEAN',
+    description: 'رادیوی ویس‌کال: دستور /voicecall در گروه فعال باشد',
+  },
+  {
+    key: 'voicecall_quality',
+    value: 'high',
+    type: 'STRING',
+    description: 'کیفیت صدای استریم: low، medium، high یا studio',
+  },
+  {
+    key: 'voicecall_volume',
+    value: '100',
+    type: 'NUMBER',
+    description: 'صدای پخش (۱ تا ۲۰۰؛ ۱۰۰ یعنی صدای اصلی آهنگ)',
+  },
+  {
+    key: 'voicecall_max_minutes',
+    value: '120',
+    type: 'NUMBER',
+    description: 'سقف زمان هر رادیو به دقیقه (۰ یعنی بدون سقف)',
+  },
+  {
+    key: 'voicecall_max_streams',
+    value: '5',
+    type: 'NUMBER',
+    description: 'حداکثر گروه‌هایی که هم‌زمان روی این سرور پخش ویس‌کال دارند',
+  },
+  {
+    key: 'voicecall_auto_start',
+    value: 'true',
+    type: 'BOOLEAN',
+    description: 'اگر ویس‌کال گروه بسته بود، حساب تلگرام خودش آن را باز کند',
+  },
+  {
+    key: 'voicecall_account',
+    value: '',
+    type: 'STRING',
+    description: 'شناسهٔ حساب تلگرامی که پخش می‌کند (خالی = اولین حساب آماده)',
+  },
+  {
+    key: 'reward_points_enabled',
+    value: 'true',
+    type: 'BOOLEAN',
+    description: 'خرج کردن امتیاز و گرفتن کانفیگ از بخش امتیازهای ربات',
+  },
+  {
+    key: 'reward_notice_enabled',
+    value: 'true',
+    type: 'BOOLEAN',
+    description: 'وقتی امتیاز کاربر به حد نصاب یک پاداش رسید، در پیوی به او خبر داده شود',
+  },
 ];
 
 /**

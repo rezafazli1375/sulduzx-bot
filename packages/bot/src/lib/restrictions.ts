@@ -19,6 +19,7 @@ export const FEATURE_KEYS = [
   'server_status',
   'support',
   'music',
+  'voicecall',
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
@@ -36,6 +37,7 @@ export const FEATURE_LABELS: Record<FeatureKey, string> = {
   server_status: 'وضعیت سرور',
   support: 'پشتیبانی',
   music: 'پخش موزیک در گروه',
+  voicecall: 'رادیو در ویس‌کال گروه',
 };
 
 export const BLOCKED_NOTICE = '⛔️ دسترسی شما به این بخش توسط مدیریت محدود شده است.';
@@ -60,6 +62,7 @@ const CALLBACK_FEATURES: Record<string, FeatureKey> = {
   referral: 'referral',
   points: 'points',
   daily_checkin: 'points',
+  reward: 'points',
   downloader: 'downloader',
   voice_convert: 'voice_convert',
   word_to_pdf: 'word_to_pdf',
@@ -67,6 +70,8 @@ const CALLBACK_FEATURES: Record<string, FeatureKey> = {
   server_status: 'server_status',
   support: 'support',
   music: 'music',
+  vc_next: 'voicecall',
+  vc_stop: 'voicecall',
 };
 
 const COMMAND_FEATURES: Record<string, FeatureKey> = {
@@ -75,12 +80,14 @@ const COMMAND_FEATURES: Record<string, FeatureKey> = {
   '/referral': 'referral',
   '/points': 'points',
   '/checkin': 'points',
+  '/reward': 'points',
   '/download': 'downloader',
   '/voice': 'voice_convert',
   '/status': 'server_status',
   '/support': 'support',
   '/music': 'music',
   '/play': 'music',
+  '/voicecall': 'voicecall',
 };
 
 const WORD_DOC_PATTERN = /\.(docx?|odt|rtf)$/i;

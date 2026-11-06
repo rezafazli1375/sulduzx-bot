@@ -327,6 +327,27 @@ export function msNeighbourMines(
   return { total, found, hidden: total - found };
 }
 
+/**
+ * خانهٔ عدددارِ «تکمیل‌شده»: باز شده و *همهٔ* مین‌های اطرافش علامت خورده‌اند.
+ * روی تخته با رنگ سبز (msCellStyle) نشان داده می‌شود — نه با علامت متن، چون
+ * هر علامتِ افزوده عرض خانه را عوض می‌کند و ستون‌ها را می‌شکند — و دو چیز را
+ * هم‌زمان می‌گوید:
+ *  - عدد این خانه با مین‌های دیدنی‌اش می‌خواند (پس «عدد غلط» نیست)،
+ *  - خانه‌های بستهٔ باقی‌ماندهٔ اطرافش قطعاً امن‌اند (همان قانون «باز کردن اطراف»).
+ */
+export function msCellIsSatisfied(
+  board: MsCell[][],
+  rows: number,
+  cols: number,
+  r: number,
+  c: number
+): boolean {
+  const cell = board[r]?.[c];
+  if (!cell || !cell.revealed || cell.isMine || cell.adjacent === 0) return false;
+  const info = msNeighbourMines(board, rows, cols, r, c);
+  return !!info && info.hidden === 0;
+}
+
 /** چند مینِ این صندلی روی تخته علامت خورده است */
 export function minesFoundBySeat(board: MsCell[][], seat: number): number {
   let count = 0;
@@ -384,20 +405,63 @@ export function rankMsStandings(standings: MsStanding[]): { ordered: MsStanding[
   return { ordered, draw };
 }
 
+// ─── گلیف‌های خانه ─────────────────────────────────────────────
+//
+// قانون بی‌خطرِ این بازی: *همهٔ خانه‌ها باید هم‌عرض باشند*.
+// عرض دکمهٔ inline را تلگرام از متنِ خودش می‌گیرد؛ پس «۳» (رقم باریک) یا «·»
+// در کنار یک ایموجیِ تمام‌عرض مثل ◽ و 💣، عرضِ آن ردیف را با ردیف‌های دیگر
+// فرق می‌دهد و خانه‌ها از ستون خودشان جابه‌جا می‌شوند — آن‌وقت کاربر به عددی
+// نگاه می‌کند که «کنارش بمبی نیست»، در حالی که عدد درست است و فقط ستون‌ها
+// روی صفحه کج شده‌اند (نمایش msalign.mjs: ۴۴٪ خانه‌ها نصف‌عرض رندر می‌شدند).
+// برای همین هر خانه دقیقاً یک گلیفِ ایموجی است: رقم‌ها به شکل keycap.
+
 /** خانهٔ باز‌نشده: مربع کوچک (◽) تا تخته جمع‌وجورتر از ⬜ دربیاید */
 export const MS_CELL_HIDDEN = '◽';
-export const MS_CELL_EMPTY = '·';
 export const MS_CELL_MINE = '💣';
 
-/** برچسب یک خانه برای نمایش روی تخته */
+/** برچسب خانهٔ عدددار — «0️⃣» هم یعنی «هیچ مینی اطرافم نیست» */
+export const MS_NUM_GLYPHS: string[] = ['0️⃣', '1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣'];
+
+/** خانهٔ صفر: دیگر «·» نیست؛ همان keycap صفر، تا عرضش با بقیه یکی بماند */
+export const MS_CELL_EMPTY = MS_NUM_GLYPHS[0];
+
+/**
+ * ✓ فقط در *متن* قوانین و پیام‌ها می‌آید و هرگز کنار عدد دکمه نمی‌چسبد:
+ * «3✓» دو گلیف است و عرض خانه را عوض می‌کند (دقیقاً همان باگ).
+ */
+export const MS_CELL_DONE = '✓';
+
+/** رنگِ دکمهٔ خانهٔ تکمیل‌شده — جایگزین ✓ روی تخته */
+export const MS_DONE_STYLE = 'success' as const;
+
+export type MsCellStyle = 'danger' | 'success' | 'primary' | undefined;
+
+/**
+ * رنگ دکمه، تنها کانالی است که عرض خانه را تغییر نمی‌دهد:
+ *  - خانهٔ بسته     → بدون رنگ
+ *  - مینِ باز‌شده   → danger
+ *  - عددِ تکمیل‌شده → success (سبز): «همهٔ مین‌هایش پیدا شده، پس بقیهٔ
+ *    خانه‌های بستهٔ اطرافش قطعاً امن‌اند»
+ *  - عددِ ناقص     → primary (آبی): «دست‌کم یک مینش هنوز زیر ◽ است»
+ */
+export function msCellStyle(cell: MsCell, satisfied: boolean): MsCellStyle {
+  if (!cell.revealed) return undefined;
+  if (cell.isMine) return 'danger';
+  if (cell.adjacent === 0) return undefined;
+  return satisfied ? MS_DONE_STYLE : 'primary';
+}
+
+/**
+ * برچسب یک خانه برای نمایش روی تخته — همیشه دقیقاً یک گلیفِ تمام‌عرض.
+ * (تکمیل‌شدن خانه به رنگِ دکمه سپرده شده، نه به متن؛ ببین msCellStyle.)
+ */
 export function msCellLabel(cell: MsCell): string {
   if (!cell.revealed) return MS_CELL_HIDDEN;
   if (cell.isMine) {
     if (cell.foundBy === null) return MS_CELL_MINE;
     return MS_MARK[colourForSeat(cell.foundBy)];
   }
-  if (cell.adjacent === 0) return MS_CELL_EMPTY;
-  return String(cell.adjacent);
+  return MS_NUM_GLYPHS[Math.min(8, Math.max(0, cell.adjacent))];
 }
 
 function shuffleInPlace<T>(arr: T[]): void {

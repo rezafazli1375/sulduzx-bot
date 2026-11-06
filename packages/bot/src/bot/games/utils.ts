@@ -10,20 +10,50 @@ export async function requireGroup(ctx: Context, gameName: string): Promise<bool
   const chatType = ctx.chat?.type;
   if (chatType === 'private') {
     const botInfo = await ctx.telegram.getMe();
+    // دستور مالک: متن‌های بلند بازی‌ها کوتاه شوند — اینجا فقط جملهٔ لازم.
     await ctx.reply(
-      `🎮 *بازی ${gameName}*\n\n` +
-      `این بازی فقط در *گروه* قابل انجام است!\n\n` +
-      `📌 لطفاً ربات @${botInfo.username} را به گروه خود اضافه کنید و سپس بازی را شروع کنید.\n\n` +
-      `💡 برای اضافه کردن ربات به گروه:\n` +
-      `1️⃣ وارد گروه شوید\n` +
-      `2️⃣ به تنظیمات گروه بروید\n` +
-      `3️⃣ Add Members را بزنید\n` +
-      `4️⃣ @${botInfo.username} را جستجو و اضافه کنید`,
+      `🎮 *${gameName}* فقط در *گروه* بازی می‌شود.\n` +
+        `ربات @${botInfo.username} را به گروهتان اضافه کنید و آنجا بازی را شروع کنید.`,
       { parse_mode: 'Markdown', ...await mainMenuKeyboard() }
     );
     return false;
   }
   return true;
+}
+
+// ─── Short lobby + rules on demand ───────────
+// پیام گروه هر بازی فقط «همین حالا چه کار کنم» را نشان می‌دهد؛ توضیح کامل
+// قوانین در دکمهٔ «📖 قوانین» ماند تا گروه با متن‌های بلند شلوغ نشود.
+export const RULES_BUTTON_LABEL = '📖 قوانین';
+
+export function rulesButton(action: string): any {
+  return Markup.button.callback(RULES_BUTTON_LABEL, action);
+}
+
+/**
+ * ارسال قوانین کامل بازی.
+ * اول در گفتگوی خصوصیِ همان بازیکن (گروه تمیز می‌ماند)؛ اگر ربات را استارت
+ * نکرده بود و فرستادن ممکن نشد، همان متن در گروه می‌نشیند و مثل بقیهٔ پیام‌های
+ * بازی در دفتر ثبت می‌شود تا در پایان پاک شود.
+ */
+export async function sendGameRules(
+  ctx: Context,
+  key: string,
+  text: string
+): Promise<'private' | 'group'> {
+  const userId = ctx.from?.id;
+  if (typeof userId === 'number') {
+    try {
+      await ctx.telegram.sendMessage(userId.toString(), text, { parse_mode: 'Markdown' });
+      await ctx.answerCbQuery('📖 قوانین کامل در گفتگوی خصوصی با ربات فرستاده شد.');
+      return 'private';
+    } catch {
+      // دسترسی به پیوی نداریم؛ مجبوریم در گروه بفرستیم
+    }
+  }
+  await sendGameMessage(ctx, key, text, { parse_mode: 'Markdown' });
+  await ctx.answerCbQuery('📖 قوانین کامل در گروه ارسال شد.');
+  return 'group';
 }
 
 // ─── Group message ledger & cleanup ──────────

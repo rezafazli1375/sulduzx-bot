@@ -13,6 +13,7 @@ export const PRIVATE_COMMANDS = [
   { command: 'proxy', description: 'دریافت پروکسی' },
   { command: 'points', description: 'امتیازهای من' },
   { command: 'checkin', description: 'امتیاز روزانه' },
+  { command: 'reward', description: 'گرفتن کانفیگ با امتیاز' },
   { command: 'referral', description: 'دعوت دوستان' },
   { command: 'support', description: 'پشتیبانی' },
   { command: 'download', description: 'دانلود از اینستاگرام و یوتیوب' },
@@ -31,6 +32,7 @@ export const GROUP_COMMANDS = [
   { command: 'joraat', description: 'شروع جرعت و حقیقت' },
   { command: 'music', description: 'پخش تصادفی یک آهنگ به‌شکل ویس' },
   { command: 'play', description: 'پخش تصادفی یک آهنگ به‌شکل ویس' },
+  { command: 'voicecall', description: 'روشن‌کردن رادیوی موزیک در ویس‌کال گروه' },
 ];
 
 /** هر دستور به کدام کلید دسترسی وابسته است؛ نبودِ کلید یعنی همیشه آزاد */
@@ -39,6 +41,7 @@ const COMMAND_FEATURE: Record<string, string> = {
   proxy: 'proxy',
   points: 'points',
   checkin: 'points',
+  reward: 'points',
   referral: 'referral',
   support: 'support',
   download: 'downloader',
@@ -46,6 +49,7 @@ const COMMAND_FEATURE: Record<string, string> = {
   status: 'server_status',
   music: 'music',
   play: 'music',
+  voicecall: 'voicecall',
 };
 
 const COMMAND_GAME: Record<string, string> = {

@@ -50,6 +50,10 @@ model User {
   freeAccountAt     DateTime? @map("free_account_at")
   panelUserId       Int?      @map("panel_user_id")
   panelUserName     String?   @map("panel_user_name")
+  /// شناسهٔ آخرین پاداشی که «می‌توانی بخری» برایش فرستاده شد (ضد اسپم)
+  rewardNoticeKey   String?   @map("reward_notice_key")
+  /// زمان ارسال آن اطلاع‌رسانی — برای تکرار نشدن
+  rewardNoticeAt    DateTime? @map("reward_notice_at")
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
 
@@ -61,6 +65,7 @@ model User {
   downloads         Download[]
   pointTransactions PointTransaction[]
   configClaims      ConfigClaim[]
+  redemptions       RewardRedemption[]
 
   @@unique([botId, telegramId])
   @@map("users")
@@ -158,6 +163,55 @@ model PointTransaction {
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("point_transactions")
+}
+
+/// سطح پاداش: چند امتیاز ← چند گیگ / چند روز. در پنل «پاداش‌ها» تعریف می‌شود.
+model PointReward {
+  id         Int      @id @default(autoincrement())
+  title      String
+  /// توضیح کوتاه زیر نام پاداش در ربات
+  subtitle   String?  @db.Text
+  costPoints Int      @map("cost_points")
+  dataGb     Float    @map("data_gb")
+  days       Int
+  limitIp    Int      @default(2) @map("limit_ip")
+  /// اینباند مقصد در پنل x-ui؛ خالی = PANEL_INBOUND_ID / settings.panel_inbound_id
+  inboundId  Int?     @map("inbound_id")
+  /// سقف دریافت برای هر کاربر؛ خالی = نامحدود
+  maxPerUser Int?     @map("max_per_user")
+  /// موجودی؛ خالی = نامحدود
+  stock      Int?
+  isActive   Boolean  @default(true) @map("is_active")
+  sortOrder  Int      @default(0) @map("sort_order")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  redemptions RewardRedemption[]
+
+  @@map("point_rewards")
+}
+
+/// دفتر خروج امتیاز و کانفیگ صادرشده. email منحصربه‌فرد است تا خرج دوبارهٔ یک موجودی ممکن نباشد.
+model RewardRedemption {
+  id         Int              @id @default(autoincrement())
+  userId     Int              @map("user_id")
+  rewardId   Int?             @map("reward_id")
+  email      String           @unique
+  costPoints Int              @map("cost_points")
+  dataGb     Float            @map("data_gb")
+  days       Int
+  inboundId  Int?             @map("inbound_id")
+  status     RedemptionStatus @default(PENDING)
+  failReason String?          @map("fail_reason") @db.Text
+  createdAt  DateTime         @default(now()) @map("created_at")
+  updatedAt  DateTime         @updatedAt @map("updated_at")
+
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reward PointReward? @relation(fields: [rewardId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([rewardId, status])
+  @@map("reward_redemptions")
 }
 
 model Setting {
@@ -277,6 +331,13 @@ enum PointType {
   CHANNEL_JOIN
   BONUS
   REDEMPTION
+}
+
+enum RedemptionStatus {
+  PENDING
+  ISSUED
+  FAILED
+  REFUNDED
 }
 
 enum SettingType {

@@ -8,7 +8,9 @@ import {
   postGameMessage,
   purgeGameMessages,
   requireGroup,
+  rulesButton,
   sendGameMessage,
+  sendGameRules,
   trackGameMessage,
 } from './utils.js';
 import {
@@ -199,22 +201,43 @@ function lobbyPlayers(session: ScalaSession): ScalaPlayer[] {
   return seats;
 }
 
+/**
+ * قوانین کامل اسکالا — با دکمهٔ «📖 قوانین» برای خود بازیکن فرستاده می‌شود تا
+ * پیام لابیِ گروه کوتاه بماند.
+ */
+const SCALA_RULES_TEXT = [
+  '🇮🇹 *قوانین اسکالا (Scala 40)*',
+  '',
+  '🂠 دو دست کارت + ۴ جایکر (*۱۰۸ کارت*) — به هر بازیکن *۱۳ کارت*',
+  '🃏 *سری (اسکالا):* سه کارت پشت‌سرهم و هم‌خال — مثل ♠️۵ ♠️۶ ♠️۷',
+  '🎴 *ست (کمبینازیونه):* سه یا چهار کارت هم‌رتبه با خال‌های متفاوت',
+  '🃏 در هر مخل فقط *یک جایکر*؛ ارزشش به اندازهٔ کارتی است که جایش نشسته',
+  '🔢 ارزش در دست: ۲ تا ۱۰ = رویشان | B/Q/K = ۱۰ | اَس = ۱۱ | جایکر = ۲۵',
+  `📌 برای *باز شدن* باید یک‌جا مخل‌هایی با مجموع ${faNum(OPEN_POINTS)} امتیاز روی میز بگذارید.`,
+  '🎯 *برندهٔ هر دست* کسی است که زودتر همهٔ کارت‌هایش را بگذارد و کارت آخر را دور بریزد (بستن بازی).',
+  '↩️ هر بازیکنی که کارت بکشد باید در همان نوبت یک کارت هم دور بریزد.',
+  `🏁 در «مسابقه»، هر کس امتیاز کیفری‌اش به ${faNum(TARGET_POINTS)} برسد از مسابقه *خارج* می‌شود؛ کمترین امتیاز باقی‌مانده = برنده.`,
+  '🎯 در «تک‌دست» همان یک دست بازی می‌شود و کسی که ببندد برنده است.',
+  '',
+  '🔒 وقتی بازی شروع شود کارت‌های شما *فقط در گفتگوی خصوصی* با ربات فرستاده می‌شود؛ هیچ بازیکنی دست بقیه را نمی‌بیند و پیامی از بازی در گروه نمی‌ماند.',
+].join('\n');
+
 function buildLobbyText(session: ScalaSession): string {
   const lines: string[] = [];
   lines.push('🇮🇹 *بازی اسکالا (Scala 40)*');
   lines.push('');
-  lines.push('🂠 *دو دست کارت + ۴ جایکر (۱۰۸ کارت)* — به هر بازیکن *۱۳ کارت*');
-  lines.push('🎯 *برندهٔ هر دست* کسی است که زودتر همهٔ کارت‌هایش را بگذارد و کارت آخر را دور بریزد (بستن بازی).');
-  lines.push(`📌 برای *باز شدن* باید یک‌جا مخل‌هایی با مجموع ${faNum(OPEN_POINTS)} امتیاز روی میز بگذارید.`);
-  lines.push(`🏁 هر کس امتیاز کیفری‌اش به ${faNum(TARGET_POINTS)} برسد، از مسابقه *خارج* می‌شود.`);
+  lines.push('🃏 ۱۰۸ کارت (دو دست + ۴ جایکر) — به هر نفر *۱۳ کارت*');
+  lines.push('🎯 زودتر کارت‌هایت را بگذار و با دور ریختن کارت آخر *ببند*');
+  lines.push(`📌 *باز شدن* = مخل با مجموع ${faNum(OPEN_POINTS)} امتیاز | کم‌ترین امتیاز کیفری = برنده`);
   lines.push('');
-  lines.push('🃏 *سری (اسکالا):* سه کارت پشت‌سرهم و هم‌خال — مثل ♠️۵ ♠️۶ ♠️۷');
-  lines.push('🎴 *ست (کمبینازیونه):* سه یا چهار کارت هم‌رتبه با خال‌های متفاوت');
-  lines.push('🃏 در هر مخل فقط *یک جایکر*؛ ارزشش به اندازهٔ کارتی است که جایش نشسته');
-  lines.push('🔢 ارزش در دست: ۲ تا ۱۰ = رویشان | B/Q/K = ۱۰ | اَس = ۱۱ | جایکر = ۲۵');
+  lines.push(
+    '👥 *حالت:* ' +
+      (session.mode === 'single' ? 'تک‌دست (یک دست، بسته = برنده)' : `مسابقه تا ${faNum(TARGET_POINTS)}`) +
+      ' | 🪑 *صندلی:* ' + faNum(session.seatCount)
+  );
+  lines.push('📖 توضیح کامل مخل، سری و ست و جایکر: دکمهٔ «📖 قوانین»');
   lines.push('');
-  lines.push('👥 *حالت بازی:* ' + (session.mode === 'single' ? 'تک‌دست (یک دست، بسته = برنده)' : `مسابقه تا ${faNum(TARGET_POINTS)}`));
-  lines.push('🪑 *صندلی‌ها:* ' + faNum(session.seatCount));
+  lines.push('🔒 کارت‌ها *فقط در گفتگوی خصوصی* با ربات می‌آیند؛ در گروه چیزی از بازی نمی‌ماند.');
   lines.push('');
   lines.push('📋 *بازیکنان:*');
   for (let seat = 0; seat < session.seatCount; seat++) {
@@ -222,9 +245,6 @@ function buildLobbyText(session: ScalaSession): string {
     if (p.id) lines.push(`${faNum(seat + 1)}. ${playerName(p)}`);
     else lines.push(`${faNum(seat + 1)}. ⬜ — خالی —`);
   }
-  lines.push('');
-  lines.push('🔒 وقتی بازی شروع شود، کارت‌های شما *فقط در گفتگوی خصوصی* با ربات فرستاده می‌شود؛');
-  lines.push('هیچ بازیکنی دست بقیه را نمی‌بیند و پیامی از بازی در گروه نمی‌ماند.');
   return lines.join('\n');
 }
 
@@ -273,7 +293,10 @@ async function buildLobbyKeyboard(ctx: Context, session: ScalaSession): Promise<
   const dmRow = await botDmRow(ctx);
   if (dmRow) rows.push(dmRow);
 
-  rows.push([Markup.button.callback('▶️ شروع بازی', 'scala_start')]);
+  rows.push([
+    Markup.button.callback('▶️ شروع بازی', 'scala_start'),
+    rulesButton('scala_rules'),
+  ]);
   rows.push([Markup.button.callback('❌ لغو', 'scala_cancel')]);
   return Markup.inlineKeyboard(rows);
 }
@@ -592,6 +615,12 @@ export async function handleScalaAction(ctx: Context) {
   if (!session) session = findSessionByUser(userId);
   if (!session) {
     await ctx.answerCbQuery('⏰ بازی منقضی شده یا وجود ندارد.');
+    return;
+  }
+
+  // ── قوانین کامل ──
+  if (action === 'scala_rules') {
+    await sendGameRules(ctx, sessionKey(session.chatId), SCALA_RULES_TEXT);
     return;
   }
 

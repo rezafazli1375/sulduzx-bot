@@ -18,6 +18,7 @@ import {
   Pencil,
 } from 'lucide-react';
 import { formatDateTime } from '../lib/features';
+import VoiceCallPanel from '../components/VoiceCallPanel';
 
 const MAX_UPLOAD_MB = 20;
 
@@ -667,6 +668,9 @@ export default function Music() {
           </p>
         )}
       </div>
+
+      {/* رادیوی ویس‌کال: حساب تلگرام عادی + پخش تصادفی در گروه */}
+      <VoiceCallPanel groups={groups} onNotice={flash} />
 
       {/* زمان‌بندی پخش خودکار — فرم */}
       <div className="card" id="music-schedule-card">

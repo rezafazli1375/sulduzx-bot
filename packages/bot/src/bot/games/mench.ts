@@ -37,6 +37,7 @@ import {
   checkGameChannelJoin,
   purgeGameMessages,
   requireGroup,
+  sendGameRules,
   trackGameMessage,
 } from './utils.js';
 
@@ -589,10 +590,8 @@ export async function handleMenchAction(ctx: Context) {
   const userName = ctx.from!.first_name || 'بازیکن';
 
   if (action === 'mench_rules') {
-    await ctx.answerCbQuery('قوانین را در گروه فرستادم 👇');
-    try {
-      await ctx.reply(RULES_TEXT, { parse_mode: 'Markdown' });
-    } catch {}
+    // قوانین کامل در پیوی بازیکن؛ اگر نشد، در گروه (و در پایان بازی پاک می‌شود)
+    await sendGameRules(ctx, key, RULES_TEXT);
     return;
   }
 

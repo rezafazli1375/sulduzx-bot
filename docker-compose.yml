@@ -38,6 +38,8 @@ services:
       TZ: ${TZ:-Asia/Tehran}
       YTDLP_PROXY: ${YTDLP_PROXY:-}
       MUSIC_DIR: /app/data/music
+      # سرویس ویس‌کال فقط داخل شبکهٔ داکر است؛ هیچ پورتی روی سرور باز نمی‌شود
+      VOICE_URL: http://sulduz-voice:8077
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -45,6 +47,33 @@ services:
     volumes:
       - downloads:/tmp/sulduz-downloads
       - ./data:/app/data
+    networks:
+      - sulduz-network
+
+  voice:
+    build:
+      context: ./packages/voice
+      dockerfile: Dockerfile
+    container_name: sulduz-voice
+    restart: unless-stopped
+    environment:
+      VOICE_PORT: 8077
+      VOICE_HOME: /app/voice
+      MUSIC_DIR: /app/music
+      # این‌ها فقط پیش‌فرض‌اند؛ مقدار واقعی از تنظیمات پنل (voicecall_*) خوانده می‌شود
+      VOICE_MAX_STREAMS: ${VOICE_MAX_STREAMS:-5}
+      VOICE_AUDIO_QUALITY: ${VOICE_AUDIO_QUALITY:-high}
+      VOICE_VOLUME: ${VOICE_VOLUME:-100}
+      VOICE_AUTO_START: ${VOICE_AUTO_START:-1}
+      TZ: ${TZ:-Asia/Tehran}
+    # پورت 8077 منتشر نمی‌شود: تنها bot به آن دسترسی دارد
+    expose:
+      - "8077"
+    volumes:
+      # کلید API، سشن‌ها و حساب‌ها — بیرون از دیتابیس و بیرون از مخزن git
+      - ./data/voice:/app/voice
+      # کتابخانهٔ آهنگ‌ها فقط خوانده می‌شود
+      - ./data/music:/app/music:ro
     networks:
       - sulduz-network
 

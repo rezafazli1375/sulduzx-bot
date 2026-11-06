@@ -4,7 +4,9 @@ import {
   checkGameChannelJoin,
   purgeGameMessages,
   requireGroup,
+  rulesButton,
   sendGameMessage,
+  sendGameRules,
 } from './utils.js';
 import {
   MAX_MS_PLAYERS,
@@ -22,7 +24,9 @@ import {
   createMsBoard,
   minesFoundBySeat,
   msBoardState,
+  msCellIsSatisfied,
   msCellLabel,
+  msCellStyle,
   msNeighbourMines,
   openAroundFound,
   placeMsMines,
@@ -115,17 +119,39 @@ function sizeLabel(difficulty: MsDifficulty): string {
   return `${faNum(difficulty.rows)}×${faNum(difficulty.cols)} با ${faNum(difficulty.mines)} مین`;
 }
 
-// ─── Keyboard ────────────────────────────────
-/** رنگ دکمه‌ها مثل مین‌روب کلاسیک: خانه‌های کم‌مین آبی، میانی سبز، پرجمعیت قرمز */
-function msButtonStyle(cell: MsCell): 'danger' | 'success' | 'primary' | undefined {
-  if (!cell.revealed) return undefined;
-  if (cell.isMine) return 'danger';
-  if (cell.adjacent === 0) return undefined;
-  if (cell.adjacent <= 2) return 'primary';
-  if (cell.adjacent <= 4) return 'success';
-  return 'danger';
+/**
+ * قوانین کامل — دیگر در پیام گروه نمی‌آیند؛ با دکمهٔ «📖 قوانین» برای خودِ
+ * بازیکن فرستاده می‌شوند تا متن شروع بازی کوتاه بماند.
+ */
+function msRulesText(difficulty: MsDifficulty): string {
+  return [
+    `💣 *قوانین مین‌روب* — دوئل دو نفره (${sizeLabel(difficulty)})`,
+    '',
+    '• بازی *نوبتی* است؛ نوبت اول با 🔴 قرمز است',
+    '• روی *مین* بزنی: خانه با رنگ تو علامت می‌خورد، امتیاز می‌گیری و *نوبت پیش تو می‌ماند*',
+    '• روی *خانهٔ امن* بزنی: عددش باز می‌شود (خانهٔ صفر کل ناحیه را باز می‌کند) و نوبت به نفر بعد می‌رود',
+    '• روی خانهٔ عدددارِ باز بزنی و همهٔ مین‌های اطرافش علامت خورده باشند، بقیهٔ خانه‌های اطراف یک‌جا باز می‌شوند',
+    `• خانهٔ علامت‌خورده با ${MS_MARK.red} ${MS_MARK.blue} یعنی مینش را آن بازیکن پیدا کرده`,
+    `• *عدد همهٔ مین‌های اطراف را می‌شمارد*؛ مینی که هنوز پیدا نشده زیر ${MS_CELL_HIDDEN} پنهان است، پس عدد می‌تواند از مین‌های دیدنی بیشتر باشد`,
+    '• عدد *سبز* = مین‌های آن خانه پیدا شده‌اند و بقیهٔ خانه‌های بستهٔ اطرافش قطعاً امن‌اند — عدد *آبی* = دست‌کم یک مینش هنوز پنهان است',
+    '• خانه‌ها همه هم‌اندازه‌اند (0️⃣ تا 8️⃣، ◽، 🔴🔵، 💣) تا ستون‌ها روی صفحه از هم نزنند و «کنارِ عدد» واقعاً خانهٔ مجاور خودش باشد',
+    '• برای اطمینان روی همان خانهٔ عدددار بزن: می‌گوید چند مینش پیدا شده و چندتا هنوز پنهان است',
+    '• جان و جریمه‌ای ندارد؛ *هرکس مین بیشتری پیدا کند برنده است* (خانهٔ امنِ باز فقط مساوی‌شکن است)',
+    '• بازی وقتی تمام می‌شود که همهٔ مین‌ها پیدا شوند یا فقط مین‌ها پنهان بمانند',
+    `• امتیاز: ${faNum(PARTICIPATION_POINTS)} شرکت + ${faNum(MINE_POINTS)} برای هر مین` +
+      ` + ${faNum(difficulty.bonus)} جایزهٔ برنده`,
+    '🔒 مین‌ها بعد از زدن دکمهٔ شروع چیده می‌شوند، پس هیچ‌کس از قبل جای آن‌ها را نمی‌داند.',
+  ].join('\n');
 }
 
+// ─── Keyboard ────────────────────────────────
+/**
+ * رنگ دکمه‌ها از msCellStyle می‌آید و *فقط* یک چیز را می‌گوید: آیا عدد این
+ * خانه با مین‌های دیدنی‌اش کامل خوانده شده یا نه. عمداً از متنِ تک‌گلیفی
+ * (keycap) استفاده می‌شود تا عرض همهٔ خانه‌ها یکی بماند — اگر «3✓» یا رقم
+ * خالی روی دکمه بنشیند، تلگرام عرض ردیف‌ها را متفاوت می‌کند و ستون‌ها
+ * می‌لغزند؛ همان چیزی که کاربران به‌صورت «عدد غلط» گزارش می‌کردند.
+ */
 function buildMsKeyboard(session: MsSession): any {
   const { rows, cols } = session.difficulty;
   const keyboard: any[][] = [];
@@ -137,7 +163,7 @@ function buildMsKeyboard(session: MsSession): any {
       // خانهٔ باز‌شده = تلاش برای باز کردن اطرافش، خانهٔ پوشیده = ضربهٔ معمولی
       const action = cell.revealed ? `ms_open_${r}_${c}` : `ms_tap_${r}_${c}`;
       const btn: any = Markup.button.callback(msCellLabel(cell), action);
-      const style = msButtonStyle(cell);
+      const style = msCellStyle(cell, msCellIsSatisfied(session.board, rows, cols, r, c));
       if (style) btn.style = style;
       row.push(btn);
     }
@@ -157,7 +183,7 @@ function buildMsKeyboard(session: MsSession): any {
     }
     keyboard.push([
       Markup.button.callback('▶️ شروع بازی', 'ms_start'),
-      Markup.button.callback('ℹ️ راهنما', 'ms_help'),
+      rulesButton('ms_help'),
     ]);
     keyboard.push([Markup.button.callback('❌ لغو بازی', 'ms_cancel')]);
     return Markup.inlineKeyboard(keyboard);
@@ -172,7 +198,7 @@ function buildMsKeyboard(session: MsSession): any {
   }
 
   keyboard.push([
-    Markup.button.callback('ℹ️ راهنما', 'ms_help'),
+    rulesButton('ms_help'),
     Markup.button.callback('❌ لغو بازی', 'ms_cancel'),
   ]);
   return Markup.inlineKeyboard(keyboard);
@@ -211,24 +237,14 @@ function buildMsText(session: MsSession): string {
     if (session.players.length < MIN_MS_PLAYERS) {
       const colour = colourForSeat(session.players.length);
       lines.push(
-        `⏳ منتظر بازیکن دوم… نفر بعدی ${MS_EMOJI[colour]} ${MS_NAME_FA[colour]} می‌شود؛ دکمهٔ «🎮 پیوستن به بازی» را بزند.`
+        `⏳ منتظر بازیکن دوم (${MS_EMOJI[colour]} ${MS_NAME_FA[colour]}) — دکمهٔ «🎮 پیوستن به بازی».`
       );
     } else {
-      lines.push('✅ هر دو بازیکن آماده‌اند؛ *هر کدام از شما* که دکمهٔ «▶️ شروع بازی» را بزند بازی شروع می‌شود.');
+      lines.push('✅ هر دو آماده — *هر کدام از شما* «▶️ شروع بازی» را بزند.');
     }
     lines.push('');
-    lines.push('📌 *قانون:*');
-    lines.push('• بازی *نوبتی* است؛ بازیکن اول 🔴 قرمز نوبت اول را دارد');
-    lines.push('• روی *مین* بزنی: خانه با رنگ تو علامت می‌خورد، ۱ امتیاز می‌گیری و *نوبت هم پیش تو می‌ماند*');
-    lines.push('• روی *خانهٔ امن* بزنی: عددِ مین‌های اطرافش باز می‌شود (خانهٔ صفر کل ناحیه را باز می‌کند) و نوبت به نفر بعد می‌رود');
-    lines.push('• اگر روی خانهٔ عدددار بزنی و همهٔ مین‌های اطرافش علامت خورده باشند، بقیهٔ خانه‌های اطراف یک‌جا باز می‌شوند');
-    lines.push(`• خانهٔ علامت‌خورده با ${MS_MARK.red} ${MS_MARK.blue} یعنی مینش را آن بازیکن پیدا کرده`);
-    lines.push('• *عدد همهٔ مین‌های اطراف را می‌شمارد*؛ مینی که هنوز پیدا نشده زیر ◽ پنهان است، پس عدد می‌تواند از مین‌های دیدنی بیشتر باشد');
-    lines.push('• برای اطمینان، روی همان خانهٔ عدددار بزن: می‌گویند چند مینش پیدا شده و چندتا هنوز پنهان است');
-    lines.push('• جان و جریمه‌ای وجود ندارد؛ *هرکس مین بیشتری پیدا کند برنده است*');
-    lines.push('• بازی وقتی تمام می‌شود که همهٔ مین‌ها پیدا شوند یا فقط مین‌ها پنهان بمانند');
-    lines.push('');
-    lines.push('🔒 مین‌ها بعد از زدن دکمهٔ شروع چیده می‌شوند، پس هیچ‌کس از قبل جای آن‌ها را نمی‌داند.');
+    lines.push('🎯 نوبتی خانه بزن: *مین* = امتیاز و نوبت پیش تو می‌ماند، *خانهٔ امن* = عددش باز می‌شود و نوبت می‌رود');
+    lines.push('🏆 بیشترین مینِ پیدا‌شده برنده است — توضیح کامل: دکمهٔ «📖 قوانین»');
     return lines.join('\n');
   }
 
@@ -236,6 +252,18 @@ function buildMsText(session: MsSession): string {
   lines.push(
     `🚩 مین پیدا‌شده: ${faNum(state.minesFound)} از ${faNum(mines)} | ` +
       `${MS_CELL_HIDDEN} خانهٔ باز‌نشده: ${faNum(state.hiddenLeft)}`
+  );
+  // گزارش کاربران «عدد ستون راست غلط است» — دو چیز لازم بود:
+  // ۱) عدد همهٔ مین‌های اطراف را می‌شمارد (مینِ پیدا‌نشده زیر ◽ پنهان است)،
+  //    که همین‌جا روی تخته نوشته می‌شود؛
+  // ۲) همهٔ خانه‌ها هم‌عرض بمانند. رقمِ باریک و «·» در کنار ایموجیِ پهن، عرض
+  //    ردیف‌ها را با هم متفاوت می‌کرد و ستون‌ها به‌خصوص در لبهٔ راست می‌لغزند؛
+  //    آن‌وقت کاربر عدد را کنار بمبِ اشتباهی می‌دید. پس عدد خانه‌ها keycap
+  //    ایموجی است (0️⃣ تا 8️⃣) و «تکمیل‌شده» به رنگِ سبز گفته می‌شود، نه با ✓
+  //    چسبیده به رقم — چون «3✓» دوبارِ عرض خانه است. msalign.mjs اندازه می‌گیرد.
+  lines.push(
+    `🔢 عدد هر خانه = مین‌های اطرافش، حتی آن‌هایی که زیر ${MS_CELL_HIDDEN} پنهان‌اند — ` +
+      'خانه‌ای که عددش سبز است مین‌هایش پیدا شده و بقیهٔ اطرافش امن است'
   );
   lines.push('');
   lines.push('👥 *بازیکنان:*');
@@ -383,15 +411,9 @@ export async function handleMinesweeperAction(ctx: Context) {
     return;
   }
 
-  // ── راهنما ──
+  // ── قوانین کامل (پیوی، تا گروه شلوغ نشود) ──
   if (action === 'ms_help') {
-    await ctx.answerCbQuery(
-      'نوبتی: روی مین بزنی رنگ تو روی خانه می‌نشیند، ۱ امتیاز می‌گیری و نوبت پیش تو می‌ماند. ' +
-        'روی خانهٔ امن بزنی عددش باز می‌شود و نوبت به نفر بعد می‌رود. بیشترین مین = برنده. ' +
-        'عددِ هر خانه همهٔ مین‌های اطرافش را می‌شمارد، حتی آن‌هایی که هنوز زیر ◽ پنهان‌اند؛ ' +
-        'با زدن روی همان خانهٔ عدددار می‌فهمی چندتا پیدا شده و چندتا مانده.',
-      { show_alert: true }
-    );
+    await sendGameRules(ctx, key, msRulesText(session.difficulty));
     return;
   }
 

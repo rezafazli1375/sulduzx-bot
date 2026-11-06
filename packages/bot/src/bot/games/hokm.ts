@@ -8,7 +8,9 @@ import {
   postGameMessage,
   purgeGameMessages,
   requireGroup,
+  rulesButton,
   sendGameMessage,
+  sendGameRules,
   trackGameMessage,
 } from './utils.js';
 import {
@@ -162,6 +164,26 @@ function lobbyPlayers(hostId: number, hostName?: string): HokmPlayer[] {
 }
 
 // ─── Group board (public) ─────────────────────
+/**
+ * قوانین کامل حکم — با دکمهٔ «📖 قوانین» برای خود بازیکن فرستاده می‌شود، نه در
+ * پیام گروه، تا شروع بازی کوتاه بماند.
+ */
+const HOKM_RULES_TEXT = [
+  '🃏 *قوانین استاندارد حکم*',
+  '',
+  '• ۵۲ کارت؛ هر نفر ۱۳ کارت (پخش ۵-۴-۴)',
+  '• یک خال به‌عنوان «حکم» انتخاب می‌شود؛ دارندهٔ اَس حکم، *حاکم* می‌شود و اول بازی می‌کند',
+  '• باید خال خواسته‌شده را بازی کنید؛ اگر نداشتید، هر کارتی (حتی حکم) مجاز است',
+  '• حکم بر همهٔ خال‌ها می‌زند؛ برندهٔ هر تریک، تریک بعدی را شروع می‌کند',
+  `• تیمی که ${TRICK_POINTS_TO_WIN} تریک بگیرد برندهٔ بازی است`,
+  '• کوت: تیمی که هیچ تریکی نگیرد، دو برابر باخت',
+  `• سو: بازیکنی که هر ${faNum(TOTAL_TRICKS)} تریک را بگیرد`,
+  '',
+  '🔒 *کارت‌ها محرمانه‌اند:* دست شما فقط در *گفتگوی خصوصی* با ربات فرستاده می‌شود و هیچ بازیکن دیگری آن را نمی‌بیند.',
+  '📱 به‌محض *شروع بازی* پیام گروه پاک می‌شود و ادامهٔ بازی (کارت، حکم و نوبت‌ها) فقط در پیوی است؛ گروه شلوغ نمی‌شود.',
+  '🧹 پیام کوتاه نتیجه هم کمی بعد از گروه پاک می‌شود.',
+].join('\n');
+
 /** پیام گروه = میز بازی. هیچ‌وقت دستِ کسی در این پیام نشان داده نمی‌شود. */
 function buildHokmText(session: HokmSession): string {
   const lines: string[] = [];
@@ -182,31 +204,10 @@ function buildHokmText(session: HokmSession): string {
       `🎮 بازیکنان آماده: ${humanCount(session)} از ۴ (صندلی‌های خالی را ربات پر می‌کند)`
     );
     lines.push('');
-    lines.push('📋 *قوانین استاندارد حکم:*');
-    lines.push('• ۵۲ کارت؛ هر نفر ۱۳ کارت (پخش ۵-۴-۴)');
-    lines.push(
-      '• یک خال به‌عنوان «حکم» انتخاب می‌شود؛ دارندهٔ اَس حکم، **حاکم** می‌شود و اول بازی می‌کند'
-    );
-    lines.push(
-      '• باید خال خواسته‌شده را بازی کنید؛ اگر نداشتید، هر کارتی (حتی حکم) مجاز است'
-    );
-    lines.push('• حکم بر همهٔ خال‌ها می‌زند؛ برندهٔ هر تریک، تریک بعدی را شروع می‌کند');
-    lines.push(`• تیمی که ${TRICK_POINTS_TO_WIN} تریک بگیرد برندهٔ بازی است`);
-    lines.push('• کوت: تیمی که هیچ تریکی نگیرد، دو برابر باخت');
-    lines.push('• سو: بازیکنی که هر ۱۳ تریک را بگیرد');
-    lines.push('');
-    lines.push(
-      '🔒 *کارت‌های شما محرمانه است:* دست شما فقط در **گفتگوی خصوصی** با ربات فرستاده می‌شود و هیچ بازیکن دیگری آن را نمی‌بیند.'
-    );
-    lines.push('');
-    lines.push(
-      '🎯 برای شرکت دکمهٔ «🎮 نشستن روی صندلی» را بزنید؛ سپس میزبان «▶️ شروع بازی» را می‌زند.'
-    );
-    lines.push('');
-    lines.push(
-      '📱 به‌محض *شروع بازی* این پیام از گروه پاک می‌شود و ادامهٔ بازی (کارت‌ها، حکم و نوبت‌ها) فقط در *گفتگوی خصوصی* شما با ربات است؛ گروه شلوغ نمی‌شود.'
-    );
-    lines.push('🧹 پیام کوتاه نتیجهٔ بازی هم کمی بعد از گروه پاک می‌شود.');
+    lines.push('🎯 دکمهٔ «🎮 نشستن روی صندلی»؛ میزبان «▶️ شروع بازی» را می‌زند.');
+    lines.push('🎴 حکم بر همهٔ خال‌ها می‌زند و باید خال خواسته‌شده را بازی کنی — توضیح کامل: دکمهٔ «📖 قوانین»');
+    lines.push('🔒 دست شما *فقط در گفتگوی خصوصی* با ربات است و به‌محض شروع، این پیام از گروه پاک می‌شود.');
+    lines.push(`🏆 تیمی که ${TRICK_POINTS_TO_WIN} تریک بگیرد برنده است.`);
     return lines.join('\n');
   }
 
@@ -417,7 +418,7 @@ async function buildHokmKeyboard(ctx: Context, session: HokmSession): Promise<an
   const dmRow = await botDmRow(ctx);
   if (dmRow) rows.push(dmRow);
 
-  rows.push([Markup.button.callback('▶️ شروع بازی', 'hokm_start')]);
+  rows.push([Markup.button.callback('▶️ شروع بازی', 'hokm_start'), rulesButton('hokm_rules')]);
   rows.push([Markup.button.callback('❌ لغو', 'hokm_cancel')]);
   return Markup.inlineKeyboard(rows);
 }
@@ -502,6 +503,12 @@ export async function handleHokmAction(ctx: Context) {
 
   if (!session) {
     await ctx.answerCbQuery('⏰ بازی منقضی شده یا وجود ندارد.');
+    return;
+  }
+
+  // ── قوانین کامل ──
+  if (action === 'hokm_rules') {
+    await sendGameRules(ctx, sessionKey(session.chatId), HOKM_RULES_TEXT);
     return;
   }
 
