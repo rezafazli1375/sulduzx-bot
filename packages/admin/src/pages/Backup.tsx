@@ -195,9 +195,6 @@ export default function Backup() {
     } finally {
       setRunningAutoBackup(false);
     }
-  };    } finally {
-      setSettingsLoading(false);
-    }
   };
 
   const sendBackup = async (backup: BackupFile) => {
