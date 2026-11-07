@@ -59,6 +59,9 @@ async function main() {
     { key: 'ytdlp_proxy_url', value: '', type: 'STRING', description: 'آدرس پروکسی دستی (مثلاً socks5h://1.2.3.4:1080)' },
     { key: 'ytdlp_proxy_mode', value: 'off', type: 'STRING', description: 'حالت پروکسی دانلودر: off, socks, v2ray' },
     { key: 'ytdlp_v2ray_config', value: '', type: 'STRING', description: 'کانفیگ V2Ray دانلودر (vless://, vmess://, trojan://, ss:// یا JSON)' },
+    { key: 'backup_telegram_chat_id', value: '', type: 'STRING', description: 'شناسهٔ عددی تلگرام برای ارسال خودکار بکاپ' },
+    { key: 'backup_bot_id', value: '', type: 'NUMBER', description: 'شناسهٔ رباتی که بکاپ را ارسال می‌کند' },
+    { key: 'backup_auto_send', value: 'false', type: 'BOOLEAN', description: 'ارسال خودکار بکاپ بعد از ساخت' },
   ];
 
   for (const setting of defaultSettings) {

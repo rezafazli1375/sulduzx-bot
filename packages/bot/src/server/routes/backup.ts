@@ -1,11 +1,12 @@
 import { Router, Response } from 'express';
 import fs from 'fs';
 import path from 'path';
+import { InputFile } from 'telegraf/types';
 import { prisma } from '../../lib/prisma.js';
 import { AuthRequest } from '../middleware/auth.js';
-import { clearSettingsCache } from '../../lib/settings.js';
+import { clearSettingsCache, getSetting, getSettingBool, getSettingNumber } from '../../lib/settings.js';
 import { clearTextsCache } from '../../lib/texts.js';
-import { reloadBots, getBotRuntime } from '../../bot/index.js';
+import { reloadBots, getBotRuntime, getBotInstance } from '../../bot/index.js';
 
 const router = Router();
 
@@ -333,7 +334,22 @@ router.post('/', async (_req: AuthRequest, res: Response) => {
   try {
     const payload = await collectData();
     const { name, size } = await writeBackup(payload);
-    res.json({ success: true, name, size, counts: payload.counts });
+
+    // Auto-send if enabled
+    let sendResult: { ok: boolean; error?: string } | null = null;
+    const autoSend = await getSettingBool('backup_auto_send');
+    if (autoSend) {
+      sendResult = await sendBackupToTelegram(name);
+    }
+
+    res.json({
+      success: true,
+      name,
+      size,
+      counts: payload.counts,
+      autoSent: autoSend,
+      sendResult: sendResult || { ok: false, error: 'ارسال خودکار غیرفعال' },
+    });
   } catch (error) {
     console.error('Create backup error:', error);
     res.status(500).json({ error: 'خطا در ساخت بکاپ: ' + serializeError(error) });
@@ -417,6 +433,121 @@ router.post('/restore', async (req: AuthRequest, res: Response) => {
   } catch (error) {
     console.error('Restore backup error:', error);
     res.status(500).json({ error: 'خطا در بازگردانی بکاپ: ' + serializeError(error) });
+  }
+});
+
+/**
+ * ارسال بکاپ به شناسهٔ تلگرام با ربات انتخاب‌شده.
+ */
+async function sendBackupToTelegram(backupName: string): Promise<{ ok: boolean; error?: string }> {
+  const chatId = await getSetting('backup_telegram_chat_id');
+  const botId = await getSettingNumber('backup_bot_id');
+
+  if (!chatId || !botId) {
+    return { ok: false, error: 'تنظیمات ارسال بکاپ کامل نیست (chat ID یا bot ID خالی)' };
+  }
+
+  const full = resolveBackupPath(backupName);
+  if (!full) {
+    return { ok: false, error: 'فایل بکاپ پیدا نشد' };
+  }
+
+  const bot = getBotInstance(botId);
+  if (!bot) {
+    return { ok: false, error: `ربات ${botId} در دسترس نیست یا فعال نیست` };
+  }
+
+  try {
+    const stat = fs.statSync(full);
+    const fileStream = fs.createReadStream(full);
+    const inputFile: InputFile = { source: fileStream, filename: backupName };
+
+    const caption = `📦 بکاپ سولدوز\n📝 ${backupName}\n📊 ${formatBytes(stat.size)}\n🕐 ${stat.mtime.toLocaleString('fa-IR')}`;
+
+    await bot.telegram.sendDocument(chatId, inputFile, { caption });
+    return { ok: true };
+  } catch (error) {
+    console.error('Send backup to telegram error:', error);
+    return { ok: false, error: serializeError(error) };
+  }
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+}
+
+router.post('/:name/send', async (req: AuthRequest, res: Response) => {
+  try {
+    const { name } = req.params;
+    const result = await sendBackupToTelegram(name);
+    if (!result.ok) {
+      return res.status(400).json({ error: result.error });
+    }
+    res.json({ success: true, message: 'بکاپ با موفقیت ارسال شد' });
+  } catch (error) {
+    console.error('Send backup error:', error);
+    res.status(500).json({ error: 'خطا در ارسال بکاپ: ' + serializeError(error) });
+  }
+});
+
+router.get('/settings/telegram', async (_req: AuthRequest, res: Response) => {
+  try {
+    const chatId = await getSetting('backup_telegram_chat_id');
+    const botId = await getSettingNumber('backup_bot_id');
+    const autoSend = await getSettingBool('backup_auto_send');
+
+    const bots = await prisma.bot.findMany({
+      select: { id: true, name: true, username: true, isActive: true },
+      orderBy: { name: 'asc' },
+    });
+
+    res.json({
+      chatId: chatId || '',
+      botId: botId || 0,
+      autoSend,
+      availableBots: bots,
+    });
+  } catch (error) {
+    console.error('Get backup settings error:', error);
+    res.status(500).json({ error: 'خطا در خواندن تنظیمات' });
+  }
+});
+
+router.put('/settings/telegram', async (req: AuthRequest, res: Response) => {
+  try {
+    const { chatId, botId, autoSend } = req.body;
+
+    if (chatId !== undefined) {
+      await prisma.setting.upsert({
+        where: { key: 'backup_telegram_chat_id' },
+        update: { value: String(chatId || '') },
+        create: { key: 'backup_telegram_chat_id', value: String(chatId || ''), type: 'STRING' },
+      });
+    }
+
+    if (botId !== undefined) {
+      await prisma.setting.upsert({
+        where: { key: 'backup_bot_id' },
+        update: { value: String(botId || '') },
+        create: { key: 'backup_bot_id', value: String(botId || ''), type: 'NUMBER' },
+      });
+    }
+
+    if (autoSend !== undefined) {
+      await prisma.setting.upsert({
+        where: { key: 'backup_auto_send' },
+        update: { value: autoSend ? 'true' : 'false' },
+        create: { key: 'backup_auto_send', value: autoSend ? 'true' : 'false', type: 'BOOLEAN' },
+      });
+    }
+
+    clearSettingsCache();
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Update backup settings error:', error);
+    res.status(500).json({ error: 'خطا در به‌روزرسانی تنظیمات' });
   }
 });
 

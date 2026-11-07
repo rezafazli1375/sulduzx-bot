@@ -11,6 +11,8 @@ import {
   CheckCircle,
   AlertCircle,
   HardDrive,
+  Send,
+  Settings,
 } from 'lucide-react';
 
 interface BackupFile {
@@ -25,6 +27,20 @@ interface Stats {
   channels: number;
   settings: number;
   tickets: number;
+}
+
+interface BotInfo {
+  id: number;
+  name: string;
+  username: string | null;
+  isActive: boolean;
+}
+
+interface BackupSettings {
+  chatId: string;
+  botId: number;
+  autoSend: boolean;
+  availableBots: BotInfo[];
 }
 
 const CONFIRM_WORD = 'بازگردانی';
@@ -52,8 +68,18 @@ export default function Backup() {
   const [confirmText, setConfirmText] = useState('');
   const [restoring, setRestoring] = useState(false);
 
+  const [settings, setSettings] = useState<BackupSettings>({
+    chatId: '',
+    botId: 0,
+    autoSend: false,
+    availableBots: [],
+  });
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [sendingBackup, setSendingBackup] = useState<string | null>(null);
+
   useEffect(() => {
     loadBackups();
+    loadSettings();
   }, []);
 
   const loadBackups = async () => {
@@ -67,13 +93,62 @@ export default function Backup() {
     }
   };
 
+  const loadSettings = async () => {
+    try {
+      const res = await axios.get('/api/backup/settings/telegram');
+      setSettings(res.data);
+    } catch {
+      // Settings might not exist yet, use defaults
+    }
+  };
+
+  const saveSettings = async () => {
+    setSettingsLoading(true);
+    setError('');
+    setMessage('');
+    try {
+      await axios.put('/api/backup/settings/telegram', {
+        chatId: settings.chatId,
+        botId: settings.botId,
+        autoSend: settings.autoSend,
+      });
+      setMessage('تنظیمات ارسال بکاپ ذخیره شد');
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'خطا در ذخیره تنظیمات');
+    } finally {
+      setSettingsLoading(false);
+    }
+  };
+
+  const sendBackup = async (backup: BackupFile) => {
+    setSendingBackup(backup.name);
+    setError('');
+    setMessage('');
+    try {
+      const res = await axios.post(`/api/backup/${backup.name}/send`);
+      setMessage(res.data.message || 'بکاپ با موفقیت ارسال شد');
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'خطا در ارسال بکاپ');
+    } finally {
+      setSendingBackup(null);
+    }
+  };
+
   const createBackup = async () => {
     setLoading(true);
     setError('');
     setMessage('');
     try {
       const res = await axios.post('/api/backup');
-      setMessage(`بکاپ «${res.data.name}» با موفقیت ساخته شد (${formatSize(res.data.size)})`);
+      let msg = `بکاپ «${res.data.name}» با موفقیت ساخته شد (${formatSize(res.data.size)})`;
+      if (res.data.autoSent) {
+        if (res.data.sendResult?.ok) {
+          msg += ' و به تلگرام ارسال شد';
+        } else {
+          msg += ` ولی ارسال به تلگرام ناموفق بود: ${res.data.sendResult?.error}`;
+        }
+      }
+      setMessage(msg);
       await loadBackups();
     } catch (err: any) {
       setError(err.response?.data?.error || 'خطا در ساخت بکاپ');
@@ -238,6 +313,73 @@ export default function Backup() {
         ))}
       </div>
 
+      <div className="card">
+        <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100">
+          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center">
+            <Settings size={18} className="text-white" />
+          </div>
+          <h2 className="text-lg font-bold text-gray-900">تنظیمات ارسال به تلگرام</h2>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              شناسهٔ عددی تلگرام (Chat ID)
+            </label>
+            <input
+              type="text"
+              value={settings.chatId}
+              onChange={(e) => setSettings({ ...settings, chatId: e.target.value })}
+              className="input-field max-w-md"
+              placeholder="مثال: 123456789 یا -1001234567890"
+              dir="ltr"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              شناسهٔ عددی کاربر یا گروهی که بکاپ به آن ارسال شود
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              ربات ارسال‌کننده
+            </label>
+            <select
+              value={settings.botId}
+              onChange={(e) => setSettings({ ...settings, botId: parseInt(e.target.value, 10) })}
+              className="input-field max-w-md"
+            >
+              <option value={0}>-- انتخاب ربات --</option>
+              {settings.availableBots.map((bot) => (
+                <option key={bot.id} value={bot.id} disabled={!bot.isActive}>
+                  {bot.name}{bot.username ? ` (@${bot.username})` : ''}{!bot.isActive ? ' (غیرفعال)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              id="autoSend"
+              checked={settings.autoSend}
+              onChange={(e) => setSettings({ ...settings, autoSend: e.target.checked })}
+              className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+            />
+            <label htmlFor="autoSend" className="text-sm text-gray-700">
+              ارسال خودکار بکاپ بعد از هر ساخت
+            </label>
+          </div>
+
+          <button
+            onClick={saveSettings}
+            disabled={settingsLoading}
+            className="btn-primary flex items-center gap-2 disabled:opacity-50"
+          >
+            {settingsLoading ? 'در حال ذخیره...' : 'ذخیره تنظیمات'}
+          </button>
+        </div>
+      </div>
+
       <div className="card bg-amber-50 border-amber-200">
         <div className="flex items-start gap-3">
           <AlertTriangle size={20} className="text-amber-600 mt-0.5 shrink-0" />
@@ -288,6 +430,14 @@ export default function Backup() {
                   <td className="py-3 text-gray-600">{formatDate(backup.createdAt)}</td>
                   <td className="py-3">
                     <div className="flex items-center gap-2 justify-end">
+                      <button
+                        onClick={() => sendBackup(backup)}
+                        disabled={sendingBackup === backup.name}
+                        className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg disabled:opacity-50"
+                        title="ارسال به تلگرام"
+                      >
+                        <Send size={17} />
+                      </button>
                       <button
                         onClick={() => downloadBackup(backup)}
                         className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"

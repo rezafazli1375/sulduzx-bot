@@ -214,6 +214,24 @@ const REQUIRED_DEFAULTS: Array<{
     type: 'BOOLEAN',
     description: 'وقتی امتیاز کاربر به حد نصاب یک پاداش رسید، در پیوی به او خبر داده شود',
   },
+  {
+    key: 'backup_telegram_chat_id',
+    value: '',
+    type: 'STRING',
+    description: 'شناسهٔ عددی تلگرام برای ارسال خودکار بکاپ',
+  },
+  {
+    key: 'backup_bot_id',
+    value: '',
+    type: 'NUMBER',
+    description: 'شناسهٔ رباتی که بکاپ را ارسال می‌کند',
+  },
+  {
+    key: 'backup_auto_send',
+    value: 'false',
+    type: 'BOOLEAN',
+    description: 'ارسال خودکار بکاپ بعد از ساخت',
+  },
 ];
 
 /**
