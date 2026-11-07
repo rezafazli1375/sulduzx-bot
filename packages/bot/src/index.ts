@@ -8,6 +8,7 @@ import { ensureDefaultSettings } from './lib/settings.js';
 import { startMusicScheduler, stopMusicScheduler } from './lib/music-schedule.js';
 import { startRadioLoop, stopRadioLoop } from './bot/voicecall.js';
 import { startRewardNoticeSweeper, stopRewardNoticeSweeper } from './lib/reward-notice.js';
+import { startBackupScheduler, stopBackupScheduler } from './lib/backup-scheduler.js';
 import { ensureDefaultMenuButtons } from './bot/start.js';
 import { APP_INFO } from './lib/app-info.js';
 
@@ -45,6 +46,10 @@ async function main() {
   // بعد از چند بار نرسیدن، رادیوهای باز را خاموش می‌کند.
   startRadioLoop();
   console.log('Voice-call radio loop started');
+
+  // زمان‌بندی بکاپ خودکار: هر ۶۰ ثانیه بررسی می‌کند آیا زمان اجرا رسیده است.
+  startBackupScheduler();
+  console.log('Backup scheduler started');
 }
 
 main().catch((err) => {
@@ -57,6 +62,7 @@ process.on('SIGTERM', async () => {
   stopMusicScheduler();
   stopRadioLoop();
   stopRewardNoticeSweeper();
+  stopBackupScheduler();
   await stopAllBots();
   await prisma.$disconnect();
   process.exit(0);

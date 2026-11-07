@@ -7,6 +7,11 @@ import { AuthRequest } from '../middleware/auth.js';
 import { clearSettingsCache, getSetting, getSettingBool, getSettingNumber } from '../../lib/settings.js';
 import { clearTextsCache } from '../../lib/texts.js';
 import { reloadBots, getBotRuntime, getBotInstance } from '../../bot/index.js';
+import {
+  getScheduleStatus,
+  updateScheduleSettings,
+  triggerAutoBackup,
+} from '../../lib/backup-scheduler.js';
 
 const router = Router();
 
@@ -548,6 +553,79 @@ router.put('/settings/telegram', async (req: AuthRequest, res: Response) => {
   } catch (error) {
     console.error('Update backup settings error:', error);
     res.status(500).json({ error: 'خطا در به‌روزرسانی تنظیمات' });
+  }
+});
+
+// ─── زمان‌بندی بکاپ خودکار ──────────────────────────────────────────
+
+router.get('/schedule', async (_req: AuthRequest, res: Response) => {
+  try {
+    const status = await getScheduleStatus();
+    res.json(status);
+  } catch (error) {
+    console.error('Get backup schedule error:', error);
+    res.status(500).json({ error: 'خطا در خواندن زمان‌بندی بکاپ' });
+  }
+});
+
+router.put('/schedule', async (req: AuthRequest, res: Response) => {
+  try {
+    const { enabled, interval, customHours, time, retention } = req.body;
+
+    // اعتبارسنجی
+    if (interval !== undefined && !['daily', 'weekly', 'monthly', 'custom'].includes(interval)) {
+      return res.status(400).json({ error: 'بازهٔ زمانی نامعتبر است' });
+    }
+    if (customHours !== undefined && (typeof customHours !== 'number' || customHours < 1)) {
+      return res.status(400).json({ error: 'ساعت سفارشی باید عددی بزرگ‌تر از ۰ باشد' });
+    }
+    if (time !== undefined && !/^\d{2}:\d{2}$/.test(time)) {
+      return res.status(400).json({ error: 'فرمت ساعت نامعتبر است (HH:MM)' });
+    }
+    if (retention !== undefined && (typeof retention !== 'number' || retention < 1)) {
+      return res.status(400).json({ error: 'تعداد نگهداری باید عددی بزرگ‌تر از ۰ باشد' });
+    }
+
+    await updateScheduleSettings({
+      enabled,
+      interval,
+      customHours,
+      time,
+      retention,
+    });
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Update backup schedule error:', error);
+    res.status(500).json({ error: 'خطا در به‌روزرسانی زمان‌بندی بکاپ' });
+  }
+});
+
+router.post('/schedule/run', async (_req: AuthRequest, res: Response) => {
+  try {
+    const result = await triggerAutoBackup();
+    if (!result) {
+      return res.status(500).json({ error: 'خطا در ساخت بکاپ دستی' });
+    }
+
+    // اگر ارسال خودکار فعال باشد، ارسال کن
+    let sendResult: { ok: boolean; error?: string } | null = null;
+    const autoSend = await getSettingBool('backup_auto_send');
+    if (autoSend) {
+      // تابع sendBackupToTelegram در backup.ts تعریف شده
+      sendResult = await sendBackupToTelegram(result.name);
+    }
+
+    res.json({
+      success: true,
+      name: result.name,
+      size: result.size,
+      autoSent: autoSend,
+      sendResult: sendResult || { ok: false, error: 'ارسال خودکار غیرفعال' },
+    });
+  } catch (error) {
+    console.error('Manual auto backup error:', error);
+    res.status(500).json({ error: 'خطا در اجرای بکاپ: ' + serializeError(error) });
   }
 });
 

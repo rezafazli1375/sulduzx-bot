@@ -13,6 +13,8 @@ import {
   HardDrive,
   Send,
   Settings,
+  Clock,
+  Play,
 } from 'lucide-react';
 
 interface BackupFile {
@@ -41,6 +43,16 @@ interface BackupSettings {
   botId: number;
   autoSend: boolean;
   availableBots: BotInfo[];
+}
+
+interface ScheduleSettings {
+  enabled: boolean;
+  interval: 'daily' | 'weekly' | 'monthly' | 'custom';
+  customHours: number;
+  time: string;
+  retention: number;
+  lastRunAt: string;
+  nextRunAt: string;
 }
 
 const CONFIRM_WORD = 'بازگردانی';
@@ -77,9 +89,22 @@ export default function Backup() {
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [sendingBackup, setSendingBackup] = useState<string | null>(null);
 
+  const [schedule, setSchedule] = useState<ScheduleSettings>({
+    enabled: false,
+    interval: 'daily',
+    customHours: 24,
+    time: '03:00',
+    retention: 20,
+    lastRunAt: '',
+    nextRunAt: '',
+  });
+  const [scheduleLoading, setScheduleLoading] = useState(false);
+  const [runningAutoBackup, setRunningAutoBackup] = useState(false);
+
   useEffect(() => {
     loadBackups();
     loadSettings();
+    loadSchedule();
   }, []);
 
   const loadBackups = async () => {
@@ -102,6 +127,15 @@ export default function Backup() {
     }
   };
 
+  const loadSchedule = async () => {
+    try {
+      const res = await axios.get('/api/backup/schedule');
+      setSchedule(res.data);
+    } catch {
+      // Schedule might not exist yet, use defaults
+    }
+  };
+
   const saveSettings = async () => {
     setSettingsLoading(true);
     setError('');
@@ -116,6 +150,52 @@ export default function Backup() {
     } catch (err: any) {
       setError(err.response?.data?.error || 'خطا در ذخیره تنظیمات');
     } finally {
+      setSettingsLoading(false);
+    }
+  };
+
+  const saveSchedule = async () => {
+    setScheduleLoading(true);
+    setError('');
+    setMessage('');
+    try {
+      await axios.put('/api/backup/schedule', {
+        enabled: schedule.enabled,
+        interval: schedule.interval,
+        customHours: schedule.customHours,
+        time: schedule.time,
+        retention: schedule.retention,
+      });
+      setMessage('تنظیمات زمان‌بندی بکاپ ذخیره شد');
+      await loadSchedule();
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'خطا در ذخیره زمان‌بندی');
+    } finally {
+      setScheduleLoading(false);
+    }
+  };
+
+  const runAutoBackup = async () => {
+    setRunningAutoBackup(true);
+    setError('');
+    setMessage('');
+    try {
+      const res = await axios.post('/api/backup/schedule/run');
+      let msg = `بکاپ خودکار «${res.data.name}» ساخته شد (${formatSize(res.data.size)})`;
+      if (res.data.autoSent && res.data.sendResult?.ok) {
+        msg += ' و به تلگرام ارسال شد';
+      } else if (res.data.autoSent && !res.data.sendResult?.ok) {
+        msg += ` ولی ارسال به تلگرام ناموفق بود: ${res.data.sendResult?.error}`;
+      }
+      setMessage(msg);
+      await loadBackups();
+      await loadSchedule();
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'خطا در اجرای بکاپ خودکار');
+    } finally {
+      setRunningAutoBackup(false);
+    }
+  };    } finally {
       setSettingsLoading(false);
     }
   };
@@ -377,6 +457,128 @@ export default function Backup() {
           >
             {settingsLoading ? 'در حال ذخیره...' : 'ذخیره تنظیمات'}
           </button>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100">
+          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
+            <Clock size={18} className="text-white" />
+          </div>
+          <h2 className="text-lg font-bold text-gray-900">زمان‌بندی بکاپ خودکار</h2>
+        </div>
+
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              id="scheduleEnabled"
+              checked={schedule.enabled}
+              onChange={(e) => setSchedule({ ...schedule, enabled: e.target.checked })}
+              className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+            />
+            <label htmlFor="scheduleEnabled" className="text-sm text-gray-700">
+              فعال‌سازی بکاپ خودکار زمان‌بندی‌شده
+            </label>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              بازهٔ زمانی
+            </label>
+            <select
+              value={schedule.interval}
+              onChange={(e) => setSchedule({ ...schedule, interval: e.target.value as any })}
+              className="input-field max-w-md"
+              disabled={!schedule.enabled}
+            >
+              <option value="daily">روزانه</option>
+              <option value="weekly">هفتگی</option>
+              <option value="monthly">ماهانه</option>
+              <option value="custom">سفارشی (بر حسب ساعت)</option>
+            </select>
+          </div>
+
+          {schedule.interval === 'custom' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                هر چند ساعت یک‌بار
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="168"
+                value={schedule.customHours}
+                onChange={(e) => setSchedule({ ...schedule, customHours: parseInt(e.target.value, 10) || 24 })}
+                className="input-field max-w-xs"
+                disabled={!schedule.enabled}
+              />
+              <p className="text-xs text-gray-500 mt-1">حداقل ۱ ساعت، حداکثر ۱۶۸ ساعت (۷ روز)</p>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              ساعت اجرا
+            </label>
+            <input
+              type="time"
+              value={schedule.time}
+              onChange={(e) => setSchedule({ ...schedule, time: e.target.value })}
+              className="input-field max-w-xs"
+              disabled={!schedule.enabled}
+              dir="ltr"
+            />
+            <p className="text-xs text-gray-500 mt-1">ساعت اجرای بکاپ خودکار (به وقت سرور)</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              تعداد بکاپ‌های قابل نگهداری
+            </label>
+            <input
+              type="number"
+              min="1"
+              max="100"
+              value={schedule.retention}
+              onChange={(e) => setSchedule({ ...schedule, retention: parseInt(e.target.value, 10) || 20 })}
+              className="input-field max-w-xs"
+              disabled={!schedule.enabled}
+            />
+            <p className="text-xs text-gray-500 mt-1">قدیمی‌ترها خودکار پاک می‌شوند</p>
+          </div>
+
+          {schedule.nextRunAt && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <p className="text-sm text-blue-800">
+                <span className="font-medium">زمان اجرای بعدی:</span>{' '}
+                <span dir="ltr">{new Date(schedule.nextRunAt).toLocaleString('fa-IR')}</span>
+              </p>
+              {schedule.lastRunAt && (
+                <p className="text-xs text-blue-600 mt-1">
+                  آخرین اجرا: <span dir="ltr">{new Date(schedule.lastRunAt).toLocaleString('fa-IR')}</span>
+                </p>
+              )}
+            </div>
+          )}
+
+          <div className="flex items-center gap-3 pt-2">
+            <button
+              onClick={saveSchedule}
+              disabled={scheduleLoading || !schedule.enabled}
+              className="btn-primary flex items-center gap-2 disabled:opacity-50"
+            >
+              {scheduleLoading ? 'در حال ذخیره...' : 'ذخیره زمان‌بندی'}
+            </button>
+            <button
+              onClick={runAutoBackup}
+              disabled={runningAutoBackup}
+              className="btn-secondary flex items-center gap-2 disabled:opacity-50"
+            >
+              <Play size={16} />
+              {runningAutoBackup ? 'در حال اجرا...' : 'اجرای فوری'}
+            </button>
+          </div>
         </div>
       </div>
 

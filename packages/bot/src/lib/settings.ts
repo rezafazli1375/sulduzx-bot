@@ -232,6 +232,48 @@ const REQUIRED_DEFAULTS: Array<{
     type: 'BOOLEAN',
     description: 'ارسال خودکار بکاپ بعد از ساخت',
   },
+  {
+    key: 'backup_auto_enabled',
+    value: 'false',
+    type: 'BOOLEAN',
+    description: 'بکاپ خودکار زمان‌بندی‌شده فعال',
+  },
+  {
+    key: 'backup_auto_interval',
+    value: 'daily',
+    type: 'STRING',
+    description: 'بازهٔ بکاپ خودکار: daily, weekly, monthly, custom',
+  },
+  {
+    key: 'backup_auto_custom_hours',
+    value: '24',
+    type: 'NUMBER',
+    description: 'اگر بازه custom باشد، هر هر چند ساعت یک‌بار',
+  },
+  {
+    key: 'backup_auto_time',
+    value: '03:00',
+    type: 'STRING',
+    description: 'ساعت اجرای بکاپ خودکار (HH:MM)',
+  },
+  {
+    key: 'backup_auto_retention',
+    value: '20',
+    type: 'NUMBER',
+    description: 'تعداد بکاپ‌هایی که نگهداری می‌شوند (قدیمی‌ترها پاک می‌شوند)',
+  },
+  {
+    key: 'backup_last_run_at',
+    value: '',
+    type: 'STRING',
+    description: 'زمان آخرین اجرای بکاپ خودکار (ISO)',
+  },
+  {
+    key: 'backup_next_run_at',
+    value: '',
+    type: 'STRING',
+    description: 'زمان اجرای بعدی بکاپ خودکار (ISO)',
+  },
 ];
 
 /**
