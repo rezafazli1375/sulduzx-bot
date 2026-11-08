@@ -10,6 +10,10 @@ interface RunningBot {
   running: boolean;
   launched: boolean;
   error?: string;
+  /** تعداد دفعاتی که پشت‌سرهم restart شده — برای backoff */
+  restartCount: number;
+  /** آخرین بار restart */
+  lastRestartAt: number;
 }
 
 const running = new Map<number, RunningBot>();
@@ -75,6 +79,8 @@ async function startEntry(botId: number, token: string) {
     token,
     running: false,
     launched: false,
+    restartCount: 0,
+    lastRestartAt: 0,
   };
   running.set(botId, entry);
 
@@ -88,8 +94,11 @@ async function startEntry(botId: number, token: string) {
 
     entry.instance.launch({ dropPendingUpdates: true }).catch((error: any) => {
       entry.running = false;
+      entry.launched = false;
       entry.error = error?.description || error?.message || String(error);
       console.error(`Bot ${botId} polling stopped:`, entry.error);
+      // Auto-restart after a delay
+      scheduleAutoRestart(botId, entry);
     });
 
     entry.launched = true;
@@ -100,6 +109,81 @@ async function startEntry(botId: number, token: string) {
     entry.running = false;
     entry.launched = false;
     console.error(`Bot ${botId} start failed:`, entry.error);
+  }
+}
+
+/**
+ * برنامه‌ریزی راه‌اندازی مجدد خودکار با backoff تصاعدی.
+ * اگر ربات بیش از ۵ بار پشت‌سرهم در کمتر از ۱۰ دقیقه restart شود،
+ * دیگر خودکار restart نمی‌شود (مشکل جدی‌تری وجود دارد).
+ */
+function scheduleAutoRestart(botId: number, entry: RunningBot) {
+  const now = Date.now();
+  // اگر ۱۰ دقیقه از آخرین restart گذشته، شمارنده صفر شود
+  if (now - entry.lastRestartAt > 10 * 60 * 1000) {
+    entry.restartCount = 0;
+  }
+  entry.restartCount++;
+  entry.lastRestartAt = now;
+
+  // حداکثر ۵ بار restart پشت‌سرهم
+  if (entry.restartCount > 5) {
+    console.error(
+      `Bot ${botId} has restarted ${entry.restartCount} times in quick succession. ` +
+      `Auto-restart disabled. Please check the bot settings.`
+    );
+    return;
+  }
+
+  // Backoff: 5s, 10s, 20s, 40s, 80s
+  const delay = Math.min(5000 * Math.pow(2, entry.restartCount - 1), 80000);
+  console.log(`Bot ${botId} will auto-restart in ${delay / 1000}s (attempt ${entry.restartCount}/5)`);
+
+  setTimeout(async () => {
+    const current = running.get(botId);
+    if (!current || current !== entry) return; // entry replaced or removed
+    if (current.running) return; // already restarted manually
+
+    try {
+      console.log(`Auto-restarting bot ${botId}...`);
+      await startEntry(botId, current!.token);
+    } catch (restartError: any) {
+      console.error(`Bot ${botId} auto-restart failed:`, restartError?.message || restartError);
+      // Try again
+      scheduleAutoRestart(botId, current!);
+    }
+  }, delay);
+}
+
+/**
+ * بررسی سلامت دوره‌ای: هر ۶۰ ثانیه ربات‌هایی که متوقف شده‌اند
+ * اما isActive=true دارند را دوباره راه‌اندازی می‌کند.
+ */
+let healthCheckInterval: NodeJS.Timeout | null = null;
+
+function startHealthCheck() {
+  if (healthCheckInterval) return;
+  healthCheckInterval = setInterval(async () => {
+    try {
+      const bots = await prisma.bot.findMany({ where: { isActive: true } });
+      for (const bot of bots) {
+        const entry = running.get(bot.id);
+        // اگر ربات فعال باید باشد ولی running=false و خطایی ثبت شده
+        if (!entry || (!entry.running && entry.error)) {
+          console.log(`Health check: restarting bot ${bot.id} (@${bot.username || 'unknown'})`);
+          await startEntry(bot.id, bot.token);
+        }
+      }
+    } catch (err: any) {
+      console.error('Health check error:', err?.message || err);
+    }
+  }, 60_000);
+}
+
+function stopHealthCheck() {
+  if (healthCheckInterval) {
+    clearInterval(healthCheckInterval);
+    healthCheckInterval = null;
   }
 }
 
@@ -137,9 +221,11 @@ export function reloadBots(): Promise<void> {
 
 export async function startBots(): Promise<void> {
   await reloadBots();
+  startHealthCheck();
 }
 
 export async function stopAllBots(): Promise<void> {
+  stopHealthCheck();
   for (const entry of running.values()) {
     await stopEntry(entry);
   }

@@ -57,6 +57,18 @@ main().catch((err) => {
   process.exit(1);
 });
 
+// ─── مدیریت خطاهای پیش‌بینی‌نشده — جلوگیری از کرش کامل پروسس ───
+// این handlerها تضمین می‌کنند که یک خطای ناشناخته (مثلاً در یک middleware یا timer)
+// کل پروسس را نکشد. ربات‌های دیگر و API سرور به کار خود ادامه می‌دهند.
+process.on('unhandledRejection', (reason: any) => {
+  console.error('[unhandledRejection]', reason?.message || reason);
+});
+
+process.on('uncaughtException', (error: Error) => {
+  console.error('[uncaughtException]', error.message, error.stack);
+  // در صورت خطای بحرانی، پروسس را نمی‌بندیم — Docker restart می‌کند اگر لازم باشد
+});
+
 process.on('SIGTERM', async () => {
   console.log('Shutting down...');
   stopMusicScheduler();
