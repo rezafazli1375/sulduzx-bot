@@ -66,6 +66,7 @@ model User {
   pointTransactions PointTransaction[]
   configClaims      ConfigClaim[]
   redemptions       RewardRedemption[]
+  fortunes          FortuneView[]
 
   @@unique([botId, telegramId])
   @@map("users")
@@ -361,6 +362,11 @@ model GameQuestion {
   id        Int           @id @default(autoincrement())
   gameType  GameType      @map("game_type")
   text      String        @db.Text
+  /// دستهٔ محتوای سؤال/چالش.
+  ///   'sfw'  = عادی (−۱۸) — پیش‌فرض و تنها دستهٔ نمایشی وقتی +۱۸ خاموش است
+  ///   'nsfw' = مخصوص بزرگسالان (+۱۸)
+  /// فقط در جرعت و حقیقت معنا دارد؛ بقیهٔ بازی‌ها همه سؤالاتشان را 'sfw' می‌گذارند.
+  category  String        @default("sfw")
   optionA   String?       @map("option_a")
   optionB   String?       @map("option_b")
   optionC   String?       @map("option_c")
@@ -372,6 +378,28 @@ model GameQuestion {
   updatedAt DateTime      @updatedAt @map("updated_at")
 
   @@map("game_questions")
+}
+
+/// فال روزِ هر کاربر.
+/// هر سطر یعنی «این کاربر در این روزِ تهران فالش را گرفته است». کلید یکتا
+/// (userId + dateKey) باعث می‌شود دکمهٔ فال در طول یک روز فقط یک بار فال
+/// تازه بدهد و اگر کاربر دوباره زد، همان فالِ روزش را ببیند.
+/// dateKey رشتهٔ 'YYYY-MM-DD' به وقت تهران است (+۳:۳۰)، نه UTC.
+model FortuneView {
+  id         Int      @id @default(autoincrement())
+  userId     Int      @map("user_id")
+  dateKey    String   @map("date_key")
+  /// متن فالِ آن روز (برای اینکه اگر بعداً منبع فال عوض شد، متن ثابت بماند)
+  text       String   @db.Text
+  /// شمارهٔ فال در استخر (برای آمار و رفع اشکال)
+  index      Int      @default(0)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dateKey])
+  @@index([dateKey])
+  @@map("fortune_views")
 }
 
 model GameSession {

@@ -292,29 +292,31 @@ export default function Settings() {
       title: 'بازی‌ها',
       icon: '🎮',
       color: 'from-purple-500 to-violet-600',
-      keys: ['games_enabled'],
+      hint: 'از نسخهٔ ۲٫۰٫۰ سه بازی در ربات می‌ماند: جرعت و حقیقت، دوز و مین‌روب (کلمه‌یاب، حکم، منچ و اسکالا حذف شده‌اند). «بازی در پیوی» یعنی کاربر می‌تواند همین سه بازی را در گفتگوی خصوصی با خودِ ربات هم بازی کند؛ اگر خاموشش کنید بازی‌ها فقط در گروه بازی می‌شوند. سختی ربات فقط در بازیِ پیوی (دوز و مین‌روب) اثر دارد. دسترسی هر ربات به بازی‌ها از صفحهٔ «ربات‌ها» تنظیم می‌شود.',
+      keys: [
+        'games_enabled',
+        'games_private_vs_bot_enabled',
+        'game_truth_or_dare_enabled',
+        'game_truth_or_dare_nsfw',
+        'game_tic_tac_toe_enabled',
+        'game_tic_tac_toe_bot_difficulty',
+        'game_minesweeper_enabled',
+        'game_minesweeper_bot_difficulty',
+      ],
+    },
+    {
+      title: 'فال روز',
+      icon: '🔮',
+      color: 'from-indigo-500 to-fuchsia-600',
+      hint: 'دکمهٔ «🔮 فال روز» در منوی اصلی: هر کاربر در هر روز (به وقت تهران) یک فال می‌بیند و تا فردا همان فال را نشان می‌دهد. امتیازِ هر فال هم همین‌جا تنظیم می‌شود؛ ۰ یعنی فقط سرگرمی و بدون امتیاز.',
+      keys: ['fortune_enabled', 'fortune_points'],
     },
     {
       title: 'موزیک',
       icon: '🎵',
       color: 'from-fuchsia-500 to-purple-600',
-      hint: 'ربات در گروه با دستور /play یا /music یک آهنگ تصادفی را به‌شکل ویس می‌فرستد؛ روی ویس نام آهنگ و آیدی خودِ ربات نوشته می‌شود و دکمهٔ «آهنگ بعدی/توقف» یا پیام اضافه ارسال نمی‌شود. کتابخانهٔ آهنگ‌ها بین همهٔ ربات‌ها مشترک است و برای افزودن آهنگ به بخش «موزیک» بروید. اگر کاربری آهنگی را در گروه بفرستد و در کپشن بنویسد «پخش»، ربات آن را در همین کتابخانه حفظ می‌کند. دسترسی هر ربات به موزیک از بخش «ربات‌ها» تنظیم می‌شود. «پخش خودکار در ساعت» کلید کل بخش زمان‌بندی است: اگر آن را خاموش کنید، هیچ زمان‌بندی ثبت‌شده‌ای در پنل اجرا نمی‌شود و برنامهٔ ساعتی‌ها هم جابه‌جا نمی‌شود.',
+      hint: 'ربات در گروه با دستور /play یا /music یک آهنگ تصادفی را به‌شکل ویس می‌فرستد؛ روی ویس نام آهنگ و آیدی خودِ ربات نوشته می‌شود و دکمهٔ «آهنگ بعدی/توقف» یا پیام اضافه ارسال نمی‌شود. کتابخانهٔ آهنگ‌ها بین همهٔ ربات‌ها مشترک است و برای افزودن آهنگ به بخش «موزیک» بروید. اگر کاربری آهنگی را در گروه بفرستد و در کپشن بنویسد «پخش»، ربات آن را در همین کتابخانه حفظ می‌کند. دسترسی هر ربات به موزیک از بخش «ربات‌ها» تنظیم می‌شود. «پخش خودکار در ساعت» کلید کل بخش زمان‌بندی است: اگر آن را خاموش کنید، هیچ زمان‌بندی ثبت‌شده‌ای در پنل اجرا نمی‌شود و برنامهٔ ساعتی‌ها هم جابه‌جا نمی‌شود. (پخش در ویس‌کال از نسخهٔ ۲٫۰٫۰ کلاً از ربات حذف شده است.)',
       keys: ['music_enabled', 'music_user_songs', 'music_max_mb', 'music_schedule_enabled'],
-    },
-    {
-      title: 'رادیو در ویس‌کال',
-      icon: '📻',
-      color: 'from-teal-500 to-cyan-600',
-      hint: 'وقتی کاربری در گروه /voicecall بزند، یک حساب تلگرام عادی (شمارهٔ مجازی که از بخش «موزیک» وارد کرده‌اید) به ویس‌کال گروه می‌رود و آهنگ‌های کتابخانهٔ موزیک را یکی‌بعدی تصادفی پخش می‌کند. روی کارت گروه دکمهٔ «⏭ آهنگ بعدی» و «⏹ توقف» هست و هر عضوی می‌تواند آن را خاموش کند. ثبت کلید API و وارد کردن شماره در همان بخش موزیک انجام می‌شود؛ دسترسی هر ربات به این بخش از صفحهٔ «ربات‌ها» تنظیم می‌شود.',
-      keys: [
-        'voicecall_enabled',
-        'voicecall_quality',
-        'voicecall_volume',
-        'voicecall_max_minutes',
-        'voicecall_max_streams',
-        'voicecall_auto_start',
-        'voicecall_account',
-      ],
     },
     {
       title: 'وضعیت سرور',
@@ -331,12 +333,14 @@ export default function Settings() {
     { value: 'monthly', label: 'ماهانه' },
   ];
 
-  const voiceQualityOptions = [
-    { value: 'low', label: 'کم — مصرف bandwidth کمتر' },
-    { value: 'medium', label: 'متوسط' },
-    { value: 'high', label: 'زیاد (پیش‌فرض)' },
-    { value: 'studio', label: 'استودیو — سنگین‌ترین' },
+  /** سختی ربات در بازیِ پیوی (دوز و مین‌روب) */
+  const botDifficultyOptions = [
+    { value: 'easy', label: '🟢 آسان — تقریباً تصادفی بازی می‌کند' },
+    { value: 'normal', label: '🟡 متوسط — برد و دفاع را می‌بیند (پیش‌فرض)' },
+    { value: 'hard', label: '🔴 سخت — بهترین حرکت را حساب می‌کند' },
   ];
+
+  const isBotDifficultyKey = (key: string) => key.endsWith('_bot_difficulty');
 
   return (
     <div className="space-y-6">
@@ -443,13 +447,13 @@ export default function Settings() {
                           <option key={opt.value} value={opt.value}>{opt.label}</option>
                         ))}
                       </select>
-                    ) : key === 'voicecall_quality' ? (
+                    ) : isBotDifficultyKey(key) ? (
                       <select
                         value={setting.value}
                         onChange={(e) => handleChange(key, e.target.value)}
                         className="input-field max-w-xs"
                       >
-                        {voiceQualityOptions.map((opt) => (
+                        {botDifficultyOptions.map((opt) => (
                           <option key={opt.value} value={opt.value}>{opt.label}</option>
                         ))}
                       </select>

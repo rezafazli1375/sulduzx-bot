@@ -9,6 +9,8 @@ export const DEFAULT_MENU_BUTTONS = [
   { key: 'word_to_pdf', label: '📄 Word به PDF', color: 'none', sortOrder: 75 },
   { key: 'video_to_mp3', label: '🎬 ویدیو به MP3', color: 'none', sortOrder: 78 },
   { key: 'server_status', label: '📊 وضعیت سرور', color: 'none', sortOrder: 80 },
+  // نسخهٔ ۲٫۰٫۰ — فال روز؛ یک بار در هر روزِ تهران برای هر کاربر (bot/fortune.ts).
+  { key: 'daily_fortune', label: '🔮 فال روز', color: 'none', sortOrder: 82 },
   { key: 'games', label: '🎮 بازی‌ها', color: 'none', sortOrder: 85 },
   { key: 'support', label: '🎫 پشتیبانی', color: 'none', sortOrder: 90 },
 ];

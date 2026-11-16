@@ -4,14 +4,25 @@ import { AuthRequest } from '../middleware/auth.js';
 
 const router = Router();
 
+/**
+ * دستهٔ محتوای سؤال (نسخهٔ ۲٫۰٫۰): 'sfw' = معمولی (−۱۸)، 'nsfw' = بزرگ‌سالان (+۱۸).
+ * هر مقدار ناشناخته به 'sfw' می‌افتد تا سؤالات همیشه در دستهٔ مجاز بمانند.
+ */
+function normalizeCategory(value: unknown): 'sfw' | 'nsfw' {
+  return value === 'nsfw' ? 'nsfw' : 'sfw';
+}
+
 // ─── List all game questions ─────────────────
 router.get('/questions', async (req: AuthRequest, res: Response) => {
   try {
-    const { gameType } = req.query;
+    const { gameType, category } = req.query;
 
     const where: any = {};
     if (gameType && typeof gameType === 'string') {
       where.gameType = gameType;
+    }
+    if (category === 'sfw' || category === 'nsfw') {
+      where.category = category;
     }
 
     const questions = await prisma.gameQuestion.findMany({
@@ -29,7 +40,7 @@ router.get('/questions', async (req: AuthRequest, res: Response) => {
 // ─── Create a game question ──────────────────
 router.post('/questions', async (req: AuthRequest, res: Response) => {
   try {
-    const { gameType, text, optionA, optionB, optionC, optionD, answer, sortOrder } = req.body;
+    const { gameType, text, category, optionA, optionB, optionC, optionD, answer, sortOrder } = req.body;
 
     if (!gameType || !text || !answer) {
       return res.status(400).json({ error: 'فیلدهای الزامی: gameType, text, answer' });
@@ -39,6 +50,7 @@ router.post('/questions', async (req: AuthRequest, res: Response) => {
       data: {
         gameType,
         text,
+        category: normalizeCategory(category),
         optionA: optionA || null,
         optionB: optionB || null,
         optionC: optionC || null,
@@ -59,13 +71,15 @@ router.post('/questions', async (req: AuthRequest, res: Response) => {
 router.put('/questions/:id', async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { gameType, text, optionA, optionB, optionC, optionD, answer, isActive, sortOrder } = req.body;
+    const { gameType, text, category, optionA, optionB, optionC, optionD, answer, isActive, sortOrder } =
+      req.body;
 
     const question = await prisma.gameQuestion.update({
       where: { id: parseInt(id) },
       data: {
         gameType: gameType || undefined,
         text: text || undefined,
+        category: category !== undefined ? normalizeCategory(category) : undefined,
         optionA: optionA !== undefined ? optionA : undefined,
         optionB: optionB !== undefined ? optionB : undefined,
         optionC: optionC !== undefined ? optionC : undefined,
@@ -120,6 +134,13 @@ router.get('/stats', async (req: AuthRequest, res: Response) => {
       where: { isActive: true },
     });
 
+    // شمارش سؤالات جرعت و حقیقت به تفکیک دسته (−۱۸ / +۱۸) — نسخهٔ ۲٫۰٫۰
+    const todByCategory = await prisma.gameQuestion.groupBy({
+      by: ['category'],
+      _count: { id: true },
+      where: { gameType: 'TRUTH_OR_DARE', isActive: true },
+    });
+
     const finishedSessions = await prisma.gameSession.groupBy({
       by: ['gameType'],
       _count: { id: true },
@@ -133,6 +154,10 @@ router.get('/stats', async (req: AuthRequest, res: Response) => {
       activeSessions,
       questionsByType: questionsByType.map((q) => ({
         type: q.gameType,
+        count: q._count.id,
+      })),
+      truthOrDareByCategory: todByCategory.map((q) => ({
+        category: q.category,
         count: q._count.id,
       })),
       finishedByType: finishedSessions.map((s) => ({

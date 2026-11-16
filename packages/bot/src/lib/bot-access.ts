@@ -11,14 +11,13 @@ import { FEATURE_KEYS, type FeatureKey } from './restrictions.js';
 // بخش را برای همهٔ ربات‌ها خاموش می‌کند و فهرست ربات همان بخش را فقط برای یک
 // ربات خاموش می‌کند.
 
+// از نسخهٔ ۲٫۰٫۰ فقط سه بازی در ربات مانده است. کلیدهای حذف‌شده (wordle، hokm،
+// mench، scala) از این فهرست بیرون رفته‌اند تا normalizeBlockedGames آن‌ها را از
+// ردیف ربات‌های قدیمی پاک کند.
 export const GAME_IDS = [
   'truth_or_dare',
   'tic_tac_toe',
   'minesweeper',
-  'wordle',
-  'hokm',
-  'mench',
-  'scala',
 ] as const;
 
 export type GameId = (typeof GAME_IDS)[number];

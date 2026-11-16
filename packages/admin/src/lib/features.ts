@@ -9,9 +9,11 @@ export const FEATURE_LABELS: { key: string; label: string }[] = [
   { key: 'word_to_pdf', label: 'Word به PDF' },
   { key: 'video_to_mp3', label: 'ویدیو به MP3' },
   { key: 'server_status', label: 'وضعیت سرور' },
+  // نسخهٔ ۲٫۰٫۰: «رادیو در ویس‌کال گروه» از ربات حذف شد، پس کلید voicecall دیگر
+  // در فهرست نیست و در صفحهٔ ربات‌ها تیکى برایش نمایش داده نمی‌شود.
+  { key: 'daily_fortune', label: 'فال روز' },
   { key: 'games', label: 'بازی‌ها' },
   { key: 'music', label: 'پخش موزیک در گروه' },
-  { key: 'voicecall', label: 'رادیو در ویس‌کال گروه' },
   { key: 'support', label: 'پشتیبانی' },
 ];
 
@@ -21,15 +23,16 @@ export const FEATURE_LABELS: { key: string; label: string }[] = [
  */
 export const BOT_FEATURE_LABELS = FEATURE_LABELS;
 
-/** بازی‌ها یکی‌یکی قابل خاموش‌کردن برای هر ربات هستند */
+/**
+ * بازی‌ها یکی‌یکی قابل خاموش‌کردن برای هر ربات هستند.
+ * از نسخهٔ ۲٫۰٫۰ فقط سه بازی در ربات می‌ماند؛ کلمه‌یاب، حکم، منچ و اسکالا حذف
+ * شدند، پس کلیدشان از این فهرست بیرون رفته و normalizeBlockedGames مقدارهای
+ * قدیمیِ ذخیره‌شده در ردیف ربات‌ها را هم پاک می‌کند.
+ */
 export const GAME_LABELS: { key: string; label: string }[] = [
   { key: 'truth_or_dare', label: 'جرعت و حقیقت' },
   { key: 'tic_tac_toe', label: 'دوز' },
   { key: 'minesweeper', label: 'مین‌روب' },
-  { key: 'wordle', label: 'کلمه‌یاب' },
-  { key: 'hokm', label: 'حکم' },
-  { key: 'mench', label: 'منچ' },
-  { key: 'scala', label: 'اسکالا' },
 ];
 
 export function gameLabel(key: string) {

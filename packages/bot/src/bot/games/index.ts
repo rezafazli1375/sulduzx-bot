@@ -1,140 +1,49 @@
 import { Context, Markup } from 'telegraf';
-import { prisma } from '../../lib/prisma.js';
 import { getSettingBool } from '../../lib/settings.js';
 import { getBotId } from '../../lib/bot-context.js';
 import { GAMES_SECTION, isFeatureAllowed, isGameAllowed } from '../../lib/bot-access.js';
 import { findUserByCtx } from '../../lib/user.js';
-import { mainMenuKeyboard } from '../../lib/ui.js';
+import { checkGameChannelJoin } from './utils.js';
 
 // ─── Game Definitions ────────────────────────
 // `game` کلید بازی در دسترسی‌های هر ربات است (bots.blocked_games) و `key`
 // تنظیم سراسری خاموش/روشن کردن همان بازی.
 // توضیح هر بازی عمداً یک خطی است: دستور مالک، متن‌های بلند بازی‌ها کوتاه شود.
+//
+// از نسخهٔ ۲٫۰٫۰ فقط همین سه بازی در ربات می‌ماند. کلمه‌یاب، حکم، منچ و اسکالا
+// حذف شدند و کلیدهای تنظیمشان به REMOVED_SETTINGS در lib/settings.ts رفت تا
+// از دیتابیس نصب‌های قدیمی هم پاک شوند.
 const GAME_DEFS = [
   {
     game: 'truth_or_dare',
     key: 'game_truth_or_dare_enabled',
     action: 'game_truth_or_dare',
     button: '🎭 جرعت و حقیقت',
-    desc: '🎭 *جرعت و حقیقت* — حقیقت بگو یا جرئت انجام بده! (/joraat)',
+    desc: '🎭 *جرعت و حقیقت* — حقیقت بگو یا جرئت انجام بده (/joraat)',
   },
   {
     game: 'tic_tac_toe',
     key: 'game_tic_tac_toe_enabled',
     action: 'game_tic_tac_toe',
     button: '❌⭕ دوز',
-    desc: '❌⭕ *دوز* — ۳×۳ یا ۶×۷ (/dooz)',
+    desc: '❌⭕ *دوز* — ۳×۳ یا ۶×۷، در پیوی مقابل ربات (/dooz)',
   },
   {
     game: 'minesweeper',
     key: 'game_minesweeper_enabled',
     action: 'game_minesweeper',
     button: '💣 مین‌روب',
-    desc: '💣 *مین‌روب* — دوئل ۹×۹، بیشترین مین برنده است (/meen)',
-  },
-  {
-    game: 'wordle',
-    key: 'game_wordle_enabled',
-    action: 'game_wordle',
-    button: '🔤 کلمه‌یاب',
-    desc: '🔤 *کلمه‌یاب* — زودتر از بقیه حدس بزن (/kalame)',
-  },
-  {
-    game: 'hokm',
-    key: 'game_hokm_enabled',
-    action: 'game_hokm',
-    button: '🃏 حکم',
-    desc: '🃏 *حکم* — ۴ نفره، کارت‌ها در گفتگوی خصوصی (/hokm)',
-  },
-  {
-    game: 'mench',
-    key: 'game_mench_enabled',
-    action: 'game_mench',
-    button: '🎲 منچ',
-    desc: '🎲 *منچ* — ۲ تا ۴ نفره، زودتر به مرکز برس (/mench)',
-  },
-  {
-    game: 'scala',
-    key: 'game_scala_enabled',
-    action: 'game_scala',
-    button: '🇮🇹 اسکالا',
-    desc: '🇮🇹 *اسکالا* — ۲ تا ۴ نفره، با ۴۰ باز شو و ببند (/scala)',
+    desc: '💣 *مین‌روب* — دوئل ۹×۸، بیشترین مین برنده است (/meen)',
   },
 ];
 
-// ─── Group Check ─────────────────────────────
-// (همان چیزی که در games/utils.ts هست؛ بازی‌ها از utils.js وارد می‌شوند)
-export async function requireGroup(ctx: Context, gameName: string): Promise<boolean> {
-  const chatType = ctx.chat?.type;
-  if (chatType === 'private') {
-    const botInfo = await ctx.telegram.getMe();
-    await ctx.reply(
-      `🎮 *${gameName}* فقط در *گروه* بازی می‌شود.\n` +
-        `ربات @${botInfo.username} را به گروهتان اضافه کنید و آنجا بازی را شروع کنید.`,
-      { parse_mode: 'Markdown', ...await mainMenuKeyboard() }
-    );
-    return false;
-  }
-  return true;
-}
-
-// ─── Channel Join Check for Games ────────────
-export async function checkGameChannelJoin(ctx: Context): Promise<boolean> {
-  const forceJoin = await getSettingBool('force_join_channels');
-  if (!forceJoin) return true;
-
-  const botId = getBotId(ctx);
-  const user = await findUserByCtx(ctx);
-  if (!user) return false;
-
-  const channels = await prisma.channel.findMany({
-    where: { botId, isRequired: true, isActive: true },
-    orderBy: { joinOrder: 'asc' },
-  });
-
-  if (channels.length === 0) return true;
-
-  const notJoined: { username: string; title: string }[] = [];
-
-  for (const channel of channels) {
-    try {
-      const member = await ctx.telegram.getChatMember(
-        channel.channelId.toString(),
-        ctx.from!.id
-      );
-      if (!['creator', 'administrator', 'member'].includes(member.status)) {
-        notJoined.push({
-          username: channel.channelUsername,
-          title: channel.title || channel.channelUsername,
-        });
-      }
-    } catch {
-      notJoined.push({
-        username: channel.channelUsername,
-        title: channel.title || channel.channelUsername,
-      });
-    }
-  }
-
-  if (notJoined.length > 0) {
-    const channelLinks = notJoined.map((ch) => `📢 ${ch.title}`).join('\n');
-    const buttons: any[] = notJoined.map((ch) => [
-      Markup.button.url(
-        `📢 عضویت در ${ch.title}`,
-        `https://t.me/${ch.username.replace(/^@/, '')}`
-      ),
-    ]);
-    buttons.push([Markup.button.callback('✅ بررسی مجدد', 'game_check_membership')]);
-
-    await ctx.reply(
-      `⚠️ برای شرکت در بازی‌ها، ابتدا عضو کانال‌های زیر شوید:\n\n${channelLinks}`,
-      Markup.inlineKeyboard(buttons)
-    );
-    return false;
-  }
-
-  return true;
-}
+// ─── Private play vs the bot ─────────────────
+// از نسخهٔ ۲٫۰٫۰ هر سه بازی در *گفتگوی خصوصی* هم بازی می‌شوند و حریف، خودِ
+// ربات است: در دوز ربات با ⭕ بازی می‌کند، در مین‌روب صندلی 🔵 آبی را برمی‌دارد
+// و در جرعت و حقیقت مستقیم از کاربر سؤال/چالش می‌پرسد.
+// دروازهٔ مشترکشان gameChatMode در games/utils.ts است (تنظیم
+// games_private_vs_bot_enabled)؛ همان‌جا اگر حالت خاموش باشد پیام «فقط در
+// گروه» فرستاده می‌شود. این فایل دروازهٔ تکراری ندارد تا دو جا یک‌وقت باز نشود.
 
 // ─── Game Menu ───────────────────────────────
 export async function handleGames(ctx: Context) {
@@ -185,15 +94,12 @@ export async function handleGameCheckMembership(ctx: Context) {
 }
 
 // ─── Direct Game Commands ────────────────────
-// /meen, /dooz, /kalame, /hokm, /joraat start a game immediately.
-export type DirectGameKey =
-  | 'truth_or_dare'
-  | 'tic_tac_toe'
-  | 'minesweeper'
-  | 'wordle'
-  | 'hokm'
-  | 'mench'
-  | 'scala';
+// /meen, /dooz, /joraat start a game immediately.
+// کلمه‌یاب، حکم، منچ و اسکالا در ۲٫۰٫۰ حذف شدند؛ در نتیجه /kalame، /hokm،
+// /mench و /scala هم دیگر ثبت نمی‌شوند (lib/bot-commands.ts) و اگر کسی
+// پیام قدیمیِ آن بازی‌ها را در گروه بزند، catch-all در actions.ts می‌گوید
+// «این بازی حذف شده است».
+export type DirectGameKey = 'truth_or_dare' | 'tic_tac_toe' | 'minesweeper';
 
 const DIRECT_GAME_DEFS: Record<DirectGameKey, { settingKey: string; label: string; run: (ctx: Context) => Promise<void> }> = {
   truth_or_dare: {
@@ -210,26 +116,6 @@ const DIRECT_GAME_DEFS: Record<DirectGameKey, { settingKey: string; label: strin
     settingKey: 'game_minesweeper_enabled',
     label: 'مین‌روب',
     run: async (ctx) => (await import('./minesweeper.js')).handleMinesweeper(ctx),
-  },
-  wordle: {
-    settingKey: 'game_wordle_enabled',
-    label: 'کلمه‌یاب',
-    run: async (ctx) => (await import('./wordle.js')).handleWordle(ctx),
-  },
-  hokm: {
-    settingKey: 'game_hokm_enabled',
-    label: 'حکم',
-    run: async (ctx) => (await import('./hokm.js')).handleHokm(ctx),
-  },
-  mench: {
-    settingKey: 'game_mench_enabled',
-    label: 'منچ',
-    run: async (ctx) => (await import('./mench.js')).handleMench(ctx),
-  },
-  scala: {
-    settingKey: 'game_scala_enabled',
-    label: 'اسکالا',
-    run: async (ctx) => (await import('./scala.js')).handleScala(ctx),
   },
 };
 
@@ -268,10 +154,6 @@ export async function handleGameAction(ctx: Context) {
   const { handleTruthOrDare, handleTruthOrDareAction } = await import('./truth-or-dare.js');
   const { handleTicTacToe, handleTicTacToeAction } = await import('./tic-tac-toe.js');
   const { handleMinesweeper, handleMinesweeperAction } = await import('./minesweeper.js');
-  const { handleWordle, handleWordleAction } = await import('./wordle.js');
-  const { handleHokm, handleHokmAction } = await import('./hokm.js');
-  const { handleMench, handleMenchAction } = await import('./mench.js');
-  const { handleScala, handleScalaAction } = await import('./scala.js');
 
   switch (action) {
     case 'games':
@@ -309,45 +191,10 @@ export async function handleGameAction(ctx: Context) {
       await handleMinesweeper(ctx);
       break;
 
-    // Wordle
-    case 'game_wordle':
-      if (!(await isGameEnabled(ctx, 'wordle'))) {
-        await rejectDisabled(ctx);
-        break;
-      }
-      await ctx.answerCbQuery();
-      await handleWordle(ctx);
-      break;
-
-    // Hokm
-    case 'game_hokm':
-      if (!(await isGameEnabled(ctx, 'hokm'))) {
-        await rejectDisabled(ctx);
-        break;
-      }
-      await ctx.answerCbQuery();
-      await handleHokm(ctx);
-      break;
-
-    // Mench
-    case 'game_mench':
-      if (!(await isGameEnabled(ctx, 'mench'))) {
-        await rejectDisabled(ctx);
-        break;
-      }
-      await ctx.answerCbQuery();
-      await handleMench(ctx);
-      break;
-
-    // Scala
-    case 'game_scala':
-      if (!(await isGameEnabled(ctx, 'scala'))) {
-        await rejectDisabled(ctx);
-        break;
-      }
-      await ctx.answerCbQuery();
-      await handleScala(ctx);
-      break;
+    // Wordle / Hokm / Mench / Scala از نسخهٔ ۲٫۰٫۰ حذف شده‌اند؛ دکمه‌های
+    // 'game_wordle'، 'game_hokm'، 'game_mench' و 'game_scala' دیگر ثبت نمی‌شوند
+    // و هر action با پیشوند wordle_/hokm_/mench_/scala_ (و همان چهار دکمهٔ منو)
+    // در bot/actions.ts به پیام «این بازی حذف شده است» می‌رسد.
 
     default:
       // Route to specific game handlers
@@ -369,30 +216,6 @@ export async function handleGameAction(ctx: Context) {
           break;
         }
         await handleMinesweeperAction(ctx);
-      } else if (action.startsWith('wordle_')) {
-        if (!(await isGameEnabled(ctx, 'wordle'))) {
-          await rejectDisabled(ctx);
-          break;
-        }
-        await handleWordleAction(ctx);
-      } else if (action.startsWith('hokm_')) {
-        if (!(await isGameEnabled(ctx, 'hokm'))) {
-          await rejectDisabled(ctx);
-          break;
-        }
-        await handleHokmAction(ctx);
-      } else if (action.startsWith('mench_')) {
-        if (!(await isGameEnabled(ctx, 'mench'))) {
-          await rejectDisabled(ctx);
-          break;
-        }
-        await handleMenchAction(ctx);
-      } else if (action.startsWith('scala_')) {
-        if (!(await isGameEnabled(ctx, 'scala'))) {
-          await rejectDisabled(ctx);
-          break;
-        }
-        await handleScalaAction(ctx);
       }
       return false;
   }

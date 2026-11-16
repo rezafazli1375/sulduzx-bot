@@ -472,3 +472,144 @@ function shuffleInPlace<T>(arr: T[]): void {
     [arr[i], arr[j]] = [arr[j], arr[i]];
   }
 }
+
+// ─── حرکت ربات در مین‌روبِ پیوی (نسخهٔ ۲٫۰٫۰) ───────────────
+//
+// در این قانون، *زدن روی مین* جایزه است (امتیاز + نگه‌داشتن نوبت) و زدن روی
+// خانهٔ امن نوبت را می‌دهد حریف. پس هدفِ ربات همان هدفِ بازیکن است: پیدا
+// کردنِ مین، نه سالم ماندن. ربات هم مثل آدم حدس می‌زند؛ تفاوت فقط در
+// «چقدر باهوش حدس می‌زند»:
+//
+//   easy   → یک خانهٔ بستهٔ تصادفی.
+//   normal → اول هر خانه‌ای که عددی می‌گوید «همهٔ مین‌های من همین
+//            خانه‌های بسته‌اند» (قطعاً مین) را می‌زند، وگرنه تصادفی.
+//   hard   → همان قطعیت، به‌علاوه حدسِ کمّی: روی هر خانهٔ بسته،
+//            «چند مینِ پیدا‌نشده ÷ چند خانهٔ بسته» را از همهٔ عدد های اطراف
+//            جمع می‌کند و بیشترین احتمال را انتخاب می‌کند. وقتی هنوز هیچ
+//            عددی باز نشده، گوشه را می‌زند (درِ ناحیه‌های بزرگ باز می‌شود).
+//
+// ربات *هیچ‌وقت* جای مین را از بیرون نمی‌بیند: همان عدد و نشانه‌هایی را
+// می‌خواند که روی تخته به بازیکن نشان داده می‌شود (msNeighbourMines).
+
+export type MsBotSkill = 'easy' | 'normal' | 'hard';
+
+export interface MsBotMove {
+  r: number;
+  c: number;
+  /** فقط برای پیام تست و گزارش: ربات چرا این خانه را زد */
+  why: 'random' | 'certain-mine' | 'probability' | 'opening-corner';
+}
+
+function hiddenMsCells(board: MsCell[][], rows: number, cols: number): [number, number][] {
+  const cells: [number, number][] = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (!board[r][c].revealed) cells.push([r, c]);
+    }
+  }
+  return cells;
+}
+
+/** گوشه‌ها: اولین ضربهٔ خوبِ مین‌روب، چون بزرگ‌ترین ناحیه را باز می‌کند */
+function firstHiddenCorner(board: MsCell[][], rows: number, cols: number): [number, number] | null {
+  const corners: [number, number][] = [
+    [0, 0],
+    [0, cols - 1],
+    [rows - 1, 0],
+    [rows - 1, cols - 1],
+  ];
+  for (const [r, c] of corners) {
+    if (!board[r][c].revealed) return [r, c];
+  }
+  return null;
+}
+
+/**
+ * خانهٔ پیشنهادی ربات. `null` یعنی خانهٔ بسته‌ای نمانده (بازی تمام است) —
+ * فراخوان‌کننده باید در همان لحظه پایان را اعلام کند.
+ */
+export function chooseBotMsMove(
+  board: MsCell[][],
+  rows: number,
+  cols: number,
+  skill: MsBotSkill
+): MsBotMove | null {
+  const hidden = hiddenMsCells(board, rows, cols);
+  if (hidden.length === 0) return null;
+
+  const randomPick = (why: MsBotMove['why']): MsBotMove => {
+    const [r, c] = hidden[Math.floor(Math.random() * hidden.length)];
+    return { r, c, why };
+  };
+
+  if (skill === 'easy') return randomPick('random');
+
+  // امتیازِ هر خانهٔ بسته = مجموع احتمال مین از هر عددِ اطرافش
+  const probability = new Map<number, number>();
+  let numbersSeen = 0;
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const cell = board[r][c];
+      if (!cell.revealed || cell.isMine || cell.adjacent === 0) continue;
+
+      const info = msNeighbourMines(board, rows, cols, r, c);
+      if (!info) continue;
+
+      const suspects: [number, number][] = [];
+      for (const [dr, dc] of NEIGHBOURS) {
+        const nr = r + dr;
+        const nc = c + dc;
+        if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue;
+        if (!board[nr][nc].revealed) suspects.push([nr, nc]);
+      }
+      if (suspects.length === 0) continue;
+      numbersSeen++;
+
+      // «هرچه مینِ باقی‌مانده، همان خانه‌های بسته» → همه‌شان مین‌اند
+      if (info.hidden > 0 && info.hidden === suspects.length) {
+        const [r2, c2] = suspects[0];
+        return { r: r2, c: c2, why: 'certain-mine' };
+      }
+
+      if (info.hidden === 0) continue; // این عدد چیزی اضافه نمی‌کند
+      const share = info.hidden / suspects.length;
+      for (const [sr, sc] of suspects) {
+        const key = sr * cols + sc;
+        probability.set(key, (probability.get(key) ?? 0) + share);
+      }
+    }
+  }
+
+  if (skill === 'normal') return randomPick('random');
+
+  if (probability.size === 0) {
+    // هنوز هیچ عددِ کمکی باز نشده؛ گوشه بهترین شروع است
+    if (numbersSeen === 0) {
+      const corner = firstHiddenCorner(board, rows, cols);
+      if (corner) return { r: corner[0], c: corner[1], why: 'opening-corner' };
+    }
+    return randomPick('random');
+  }
+
+  let bestKey = -1;
+  let bestValue = -Infinity;
+  for (const [key, value] of probability) {
+    // تساوی → خانه‌ای که زودتر پیدا می‌شود، تا نتیجه قابل‌تکرار بماند
+    if (value > bestValue) {
+      bestValue = value;
+      bestKey = key;
+    }
+  }
+  if (bestKey < 0) return randomPick('random');
+
+  return { r: Math.floor(bestKey / cols), c: bestKey % cols, why: 'probability' };
+}
+
+/** سختیِ ذخیره‌شده در پنل → مقدار معتبر؛ هر چیز ناشناخته «normal» */
+export function normalizeMsSkill(value?: string | null): MsBotSkill {
+  const v = String(value ?? '').trim().toLowerCase();
+  if (v === 'easy' || v === 'normal' || v === 'hard') return v;
+  return 'normal';
+}
+

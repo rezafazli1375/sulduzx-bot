@@ -9,6 +9,10 @@ export const PRIVATE_COMMANDS = [
   { command: 'start', description: 'شروع ربات و منوی اصلی' },
   { command: 'menu', description: 'منوی اصلی' },
   { command: 'games', description: 'بازی‌ها' },
+  { command: 'meen', description: 'مین‌روب تک‌نفره با ربات' },
+  { command: 'dooz', description: 'دوز مقابل ربات' },
+  { command: 'joraat', description: 'جرعت و حقیقت با ربات' },
+  { command: 'fortune', description: 'فال روز' },
   { command: 'free', description: 'دریافت کانفیگ رایگان' },
   { command: 'proxy', description: 'دریافت پروکسی' },
   { command: 'points', description: 'امتیازهای من' },
@@ -25,14 +29,9 @@ export const GROUP_COMMANDS = [
   { command: 'games', description: 'منوی بازی‌های ربات' },
   { command: 'meen', description: 'شروع بازی مین‌روب' },
   { command: 'dooz', description: 'شروع بازی دوز' },
-  { command: 'kalame', description: 'شروع بازی کلمه‌یاب' },
-  { command: 'hokm', description: 'شروع بازی حکم' },
-  { command: 'mench', description: 'شروع بازی منچ' },
-  { command: 'scala', description: 'شروع بازی اسکالا' },
   { command: 'joraat', description: 'شروع جرعت و حقیقت' },
   { command: 'music', description: 'پخش تصادفی یک آهنگ به‌شکل ویس' },
   { command: 'play', description: 'پخش تصادفی یک آهنگ به‌شکل ویس' },
-  { command: 'voicecall', description: 'روشن‌کردن رادیوی موزیک در ویس‌کال گروه' },
 ];
 
 /** هر دستور به کدام کلید دسترسی وابسته است؛ نبودِ کلید یعنی همیشه آزاد */
@@ -49,17 +48,13 @@ const COMMAND_FEATURE: Record<string, string> = {
   status: 'server_status',
   music: 'music',
   play: 'music',
-  voicecall: 'voicecall',
+  fortune: 'daily_fortune',
 };
 
 const COMMAND_GAME: Record<string, string> = {
   games: '',
   meen: 'minesweeper',
   dooz: 'tic_tac_toe',
-  kalame: 'wordle',
-  hokm: 'hokm',
-  mench: 'mench',
-  scala: 'scala',
   joraat: 'truth_or_dare',
 };
 

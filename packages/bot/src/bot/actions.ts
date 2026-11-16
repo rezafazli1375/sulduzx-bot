@@ -15,7 +15,7 @@ import { mainMenuKeyboard } from '../lib/ui.js';
 import { getBotId } from '../lib/bot-context.js';
 import { findUserByCtx } from '../lib/user.js';
 import { handleGameAction, handleGameCheckMembership } from './games/index.js';
-import { handleVoiceCallCallback } from './voicecall.js';
+import { handleFortune } from './fortune.js';
 
 export function setupActionHandlers(bot: Telegraf) {
   bot.action('main_menu', async (ctx) => {
@@ -132,6 +132,12 @@ export function setupActionHandlers(bot: Telegraf) {
     await handleServerStatus(ctx);
   });
 
+  bot.action('daily_fortune', async (ctx) => {
+    await ctx.answerCbQuery();
+    const user = await findUserByCtx(ctx);
+    if (user) await handleFortune(ctx, user);
+  });
+
   bot.action('support', async (ctx) => {
     await ctx.answerCbQuery();
     const user = await findUserByCtx(ctx);
@@ -161,23 +167,6 @@ export function setupActionHandlers(bot: Telegraf) {
   bot.action('game_minesweeper', async (ctx) => {
     await handleGameAction(ctx);
   });
-
-  bot.action('game_wordle', async (ctx) => {
-    await handleGameAction(ctx);
-  });
-
-  bot.action('game_hokm', async (ctx) => {
-    await handleGameAction(ctx);
-  });
-
-  bot.action('game_mench', async (ctx) => {
-    await handleGameAction(ctx);
-  });
-
-  bot.action('game_scala', async (ctx) => {
-    await handleGameAction(ctx);
-  });
-
 
   bot.action('game_check_membership', async (ctx) => {
     await handleGameCheckMembership(ctx);
@@ -229,32 +218,20 @@ export function setupActionHandlers(bot: Telegraf) {
     await handleGameAction(ctx);
   });
 
-  // Wordle actions
-  bot.action(/^wordle_/, async (ctx) => {
-    await handleGameAction(ctx);
+  // دکمه‌های بازی‌هایی که در نسخهٔ ۲٫۰٫۰ حذف شده‌اند (حکم، منچ، اسکالا، کلمه‌یاب).
+  // پیام‌های قدیمی هنوز در گروه‌ها و پیوی‌ها مانده‌اند و بدون این handler کلیکشان
+  // هیچ پاسخی نمی‌گرفت و تلگرام ساعت‌ها «در حال منتقل‌کردن» نشان می‌داد.
+  // دو شکل دارند: دکمهٔ منوی بازی («game_wordle») و دکمه‌های داخل بازی («wordle_…»).
+  bot.action(/^(wordle|hokm|mench|scala)_|^game_(wordle|hokm|mench|scala)$/, async (ctx) => {
+    await ctx.answerCbQuery('⏳ این بازی حذف شده است.', { show_alert: true });
   });
 
-  // Hokm actions
-  bot.action(/^hokm_/, async (ctx) => {
-    await handleGameAction(ctx);
-  });
-
-  // Mench actions
-  bot.action(/^mench_/, async (ctx) => {
-    await handleGameAction(ctx);
-  });
-
-  // Scala actions
-  bot.action(/^scala_/, async (ctx) => {
-    await handleGameAction(ctx);
+  // کارت‌های قدیمیِ پخش موزیک در ویس‌کال («دکمهٔ بعد/توقف»). خودِ قابلیت در
+  // ۲٫۰٫۰ حذف شده، اما پیام‌هایش هنوز در گروه‌ها هست؛ بی‌پاسخ نگذاشتنشان
+  // همان مشکل «در حال منتقل‌کردن» را برای عضو گروه می‌سازد.
+  bot.action(/^vc_(next|stop)(:|$)/, async (ctx) => {
+    await ctx.answerCbQuery('⏳ پخش موزیک در ویس‌کال حذف شده است.', { show_alert: true });
   });
 
   // پخش موزیک دکمه ندارد: آهنگ به‌شکل ویس در گروه می‌نشیند (bot/music.ts)
-
-  // رادیوی ویس‌کال: دکمه‌های کارت «آهنگ بعدی» و «توقف» برای همهٔ اعضای گروه
-  bot.action(/^vc_(next|stop):-?\d+$/, async (ctx) => {
-    const action = String(ctx.match || '').split('_')[1]?.split(':')[0];
-    await handleVoiceCallCallback(ctx, action === 'stop' ? 'stop' : 'next');
-  });
-
 }

@@ -97,6 +97,7 @@ export async function sendMainMenu(ctx: Context, user: any, greeting?: string) {
     wordPdfEnabled,
     videoMp3Enabled,
     gamesEnabled,
+    fortuneEnabled,
   ] = await Promise.all([
     getSettingBool('free_account_enabled'),
     getSettingBool('referral_enabled'),
@@ -109,6 +110,7 @@ export async function sendMainMenu(ctx: Context, user: any, greeting?: string) {
     getSettingBool('word_pdf_enabled'),
     getSettingBool('video_mp3_enabled'),
     getSettingBool('games_enabled'),
+    getSettingBool('fortune_enabled'),
   ]);
 
   const availability: Record<string, boolean> = {
@@ -122,6 +124,10 @@ export async function sendMainMenu(ctx: Context, user: any, greeting?: string) {
     word_to_pdf: wordPdfEnabled,
     video_to_mp3: videoMp3Enabled,
     server_status: serverStatusEnabled,
+    // دکمهٔ فال روز از تنظیم «fortune_enabled» پیروی می‌کند؛ خاموش بودنش
+    // دکمه را از منو می‌برد و اگر کسی پیام قدیمی را بزند، fortune.ts می‌گوید
+    // «بخش فال خاموش است».
+    daily_fortune: fortuneEnabled,
     games: gamesEnabled,
     support: supportEnabled,
   };

@@ -11,14 +11,13 @@ import { mainMenuKeyboard } from '../lib/ui.js';
 import { handleStart } from './start.js';
 import { handleMenu } from './menu.js';
 import { handleGames, handleGameCommand } from './games/index.js';
-import { handleWordleText } from './games/wordle.js';
 import { handleMusicAudio, handleMusicCommand } from './music.js';
-import { handleVoiceCallCommand } from './voicecall.js';
 import { handleFreeConfig } from './free-config.js';
 import { handleProxy } from './proxy.js';
 import { handleReferral } from './referral.js';
 import { handlePoints, handleDailyCheckin } from './points.js';
 import { handleRewards } from './points-rewards.js';
+import { handleFortune } from './fortune.js';
 import { handleSupport, isSupportPending, handleSupportMessage } from './support.js';
 import { handleDownloader } from './downloader.js';
 import { handleServerStatus } from './server-status.js';
@@ -40,24 +39,15 @@ const GROUP_ALLOWED_COMMANDS = new Set([
   '/games',
   '/meen',
   '/dooz',
-  '/kalame',
-  '/hokm',
   '/joraat',
-  '/mench',
-  '/scala',
   '/music',
   '/play',
-  '/voicecall',
 ]);
 
 const DIRECT_GAME_COMMANDS: Array<[string, DirectGameKey]> = [
   ['meen', 'minesweeper'],
   ['dooz', 'tic_tac_toe'],
-  ['kalame', 'wordle'],
-  ['hokm', 'hokm'],
   ['joraat', 'truth_or_dare'],
-  ['mench', 'mench'],
-  ['scala', 'scala'],
 ];
 
 // ─── Channel Membership Check ────────────────
@@ -168,11 +158,6 @@ export function createBotInstance(botId: number, token: string): Telegraf {
         }
         // Ignore all other commands in groups
         return;
-      }
-      // کلمه‌یاب: حدس مستقیم با نوشتن کلمه در گروه
-      if (text) {
-        const handled = await handleWordleText(ctx, text);
-        if (handled) return;
       }
       // موزیک: کاربر آهنگ می‌فرستد و در کپشن می‌گوید «پخش» (یا /play)
       if (await handleMusicAudio(ctx)) return;
@@ -297,7 +282,7 @@ export function createBotInstance(botId: number, token: string): Telegraf {
     await handleGames(ctx);
   });
 
-  // Direct game launchers: /meen, /dooz, /kalame, /hokm, /joraat
+  // Direct game launchers: /meen, /dooz, /joraat
   for (const [command, game] of DIRECT_GAME_COMMANDS) {
     bot.command(command, async (ctx) => {
       const user = await getUser(ctx);
@@ -305,6 +290,13 @@ export function createBotInstance(botId: number, token: string): Telegraf {
       await handleGameCommand(ctx, game);
     });
   }
+
+  // فال روز: یک فال برای هر کاربر، فقط یک بار در هر روز تهران
+  bot.command('fortune', async (ctx) => {
+    const user = await getUser(ctx);
+    if (!user) return;
+    await handleFortune(ctx, user);
+  });
 
   // موزیک در گروه: /music و /play — یک آهنگ تصادفی به‌شکل ویس، بدون دکمه
   for (const command of ['music', 'play']) {
@@ -314,13 +306,6 @@ export function createBotInstance(botId: number, token: string): Telegraf {
       await handleMusicCommand(ctx);
     });
   }
-
-  // رادیوی ویس‌کال: /voicecall — یک حساب تلگرامی وارد گروه می‌شود و آهنگ تصادفی پخش می‌کند
-  bot.command('voicecall', async (ctx) => {
-    const user = await getUser(ctx);
-    if (!user) return;
-    await handleVoiceCallCommand(ctx);
-  });
 
   bot.command('menu', async (ctx) => {
     const user = await getUser(ctx);

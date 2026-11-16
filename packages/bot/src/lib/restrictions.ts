@@ -19,7 +19,7 @@ export const FEATURE_KEYS = [
   'server_status',
   'support',
   'music',
-  'voicecall',
+  'daily_fortune',
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
@@ -37,7 +37,7 @@ export const FEATURE_LABELS: Record<FeatureKey, string> = {
   server_status: 'وضعیت سرور',
   support: 'پشتیبانی',
   music: 'پخش موزیک در گروه',
-  voicecall: 'رادیو در ویس‌کال گروه',
+  daily_fortune: 'فال روز',
 };
 
 export const BLOCKED_NOTICE = '⛔️ دسترسی شما به این بخش توسط مدیریت محدود شده است.';
@@ -70,8 +70,7 @@ const CALLBACK_FEATURES: Record<string, FeatureKey> = {
   server_status: 'server_status',
   support: 'support',
   music: 'music',
-  vc_next: 'voicecall',
-  vc_stop: 'voicecall',
+  daily_fortune: 'daily_fortune',
 };
 
 const COMMAND_FEATURES: Record<string, FeatureKey> = {
@@ -87,7 +86,7 @@ const COMMAND_FEATURES: Record<string, FeatureKey> = {
   '/support': 'support',
   '/music': 'music',
   '/play': 'music',
-  '/voicecall': 'voicecall',
+  '/fortune': 'daily_fortune',
 };
 
 const WORD_DOC_PATTERN = /\.(docx?|odt|rtf)$/i;

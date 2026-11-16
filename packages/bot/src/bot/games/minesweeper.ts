@@ -1,9 +1,10 @@
 import { Context, Markup } from 'telegraf';
 import { prisma } from '../../lib/prisma.js';
+import { getSetting } from '../../lib/settings.js';
 import {
   checkGameChannelJoin,
+  gameChatMode,
   purgeGameMessages,
-  requireGroup,
   rulesButton,
   sendGameMessage,
   sendGameRules,
@@ -16,9 +17,11 @@ import {
   MS_EMOJI,
   MS_MARK,
   MS_NAME_FA,
+  MsBotSkill,
   MsCell,
   MsDifficulty,
   MsStanding,
+  chooseBotMsMove,
   colourForSeat,
   computeMsAdjacent,
   createMsBoard,
@@ -28,6 +31,7 @@ import {
   msCellLabel,
   msCellStyle,
   msNeighbourMines,
+  normalizeMsSkill,
   openAroundFound,
   placeMsMines,
   rankMsStandings,
@@ -42,6 +46,8 @@ interface MsPlayer {
   name: string;
   /** صندلی بازیکن = رنگش (۰ = 🔴، ۱ = 🔵، ۲ = 🟢 …) */
   seat: number;
+  /** بازی در پیوی (نسخهٔ ۲٫۰٫۰): صندلی دوم را خودِ ربات می‌گیرد */
+  bot?: boolean;
 }
 
 interface MsOutcome {
@@ -61,6 +67,11 @@ interface MsSession {
   status: 'waiting' | 'playing' | 'finished';
   minesPlaced: boolean;
   outcome: MsOutcome | null;
+  /**
+   * در گفتگوی خصوصی حریفِ کاربر ربات است: بی‌درور شروع می‌شود، صف انتظار
+   * ندارد و بعد از هر ضربهٔ بی‌مینِ کاربر، ربات نوبتش را بازی می‌کند.
+   */
+  vsBot: boolean;
   createdAt: number;
 }
 
@@ -68,6 +79,16 @@ interface MsSession {
 const PARTICIPATION_POINTS = 10;
 const MINE_POINTS = 3;
 const SESSION_TTL_MS = 30 * 60_000;
+
+/** شناسهٔ بازیکن-ربات؛ آیدی تلگرام همیشه مثبت است، پس ‎-۱› امن است */
+const BOT_ID = -1;
+const BOT_NAME = 'ربات';
+/**
+ * سقف حرکت‌های پیاپی ربات در یک نوبت. بدون این سقف، رباتی که مین پیدا می‌کند
+ * نوبتش را نگه می‌دارد و تا آخر بازی یک‌تنه ادامه می‌دهد؛ عدد ۴۰ از کل
+ * خانه‌های تختهٔ ۹×۸ کمتر است و فقط جلوی حلقهٔ بی‌پایان را می‌گیرد.
+ */
+const BOT_MAX_MOVES_PER_TURN = 40;
 
 /**
  * دستور مالک: پیام‌های مین‌روب (تخته + اعلام برنده) ۲۰ ثانیه بعد از پایان یا
@@ -108,7 +129,13 @@ function safeName(name: string): string {
 }
 
 function mentionUser(player: MsPlayer): string {
+  // ربات کاربر تلگرام نیست؛ لینک tg:// با آیدی منفی هم پیام را می‌شکست
+  if (player.bot) return '🤖 ربات';
   return `[${safeName(player.name)}](tg://user?id=${player.id})`;
+}
+
+function playerName(player: MsPlayer): string {
+  return player.bot ? 'ربات' : safeName(player.name);
 }
 
 function colourBadge(player: MsPlayer): string {
@@ -123,9 +150,10 @@ function sizeLabel(difficulty: MsDifficulty): string {
  * قوانین کامل — دیگر در پیام گروه نمی‌آیند؛ با دکمهٔ «📖 قوانین» برای خودِ
  * بازیکن فرستاده می‌شوند تا متن شروع بازی کوتاه بماند.
  */
-function msRulesText(difficulty: MsDifficulty): string {
+function msRulesText(difficulty: MsDifficulty, vsBot = false): string {
   return [
-    `💣 *قوانین مین‌روب* — دوئل دو نفره (${sizeLabel(difficulty)})`,
+    `💣 *قوانین مین‌روب* — دوئل دو نفره (${sizeLabel(difficulty)})` +
+      (vsBot ? ' — حریف: 🤖 ربات' : ''),
     '',
     '• بازی *نوبتی* است؛ نوبت اول با 🔴 قرمز است',
     '• روی *مین* بزنی: خانه با رنگ تو علامت می‌خورد، امتیاز می‌گیری و *نوبت پیش تو می‌ماند*',
@@ -226,7 +254,10 @@ function buildMsText(session: MsSession): string {
   const state = msBoardState(session.board, session.difficulty.rows, session.difficulty.cols, mines);
   const lines: string[] = [];
 
-  lines.push(`💣 *مین‌روب — ${label}* (${sizeLabel(session.difficulty)})`);
+  lines.push(
+    `💣 *مین‌روب — ${label}* (${sizeLabel(session.difficulty)})` +
+      (session.vsBot ? ' — 🤖 مقابل ربات' : '')
+  );
 
   if (session.status === 'waiting') {
     lines.push('');
@@ -274,7 +305,11 @@ function buildMsText(session: MsSession): string {
     // پیام تخته فقط تختهٔ آخر را نگه می‌دارد تا شلوغ نشود.
     lines.push('');
     lines.push('🏁 بازی تمام شد — *برنده و نتیجه در پیام جداگانه* نوشته شد.');
-    lines.push(`🧹 تا ${faNum(MS_PURGE_DELAY_MS / 1000)} ثانیه دیگر همهٔ پیام‌های این بازی از گروه پاک می‌شود.`);
+    lines.push(
+      `🧹 تا ${faNum(MS_PURGE_DELAY_MS / 1000)} ثانیه دیگر همهٔ پیام‌های این بازی از ` +
+        (session.vsBot ? 'این گفتگو' : 'گروه') +
+        ' پاک می‌شود.'
+    );
     return lines.join('\n');
   }
 
@@ -298,7 +333,8 @@ function standingsOf(session: MsSession): MsStanding[] {
 
 // ─── Start Minesweeper ───────────────────────
 export async function handleMinesweeper(ctx: Context) {
-  if (!(await requireGroup(ctx, 'مین‌روب'))) return;
+  const where = await gameChatMode(ctx, 'مین‌روب');
+  if (!where) return;
   if (!(await checkGameChannelJoin(ctx))) return;
 
   const chatId = ctx.chat!.id;
@@ -307,13 +343,15 @@ export async function handleMinesweeper(ctx: Context) {
   const existing = sessions.get(key);
   if (existing && existing.status !== 'finished' && Date.now() - existing.createdAt < SESSION_TTL_MS) {
     await ctx.reply(
-      '⏳ یک بازی مین‌روب در این گروه در حال انجام است. صبر کنید تمام شود یا با دکمهٔ «❌ لغو بازی» آن را ببندید.'
+      '⏳ یک بازی مین‌روب در این گفتگو در حال انجام است. صبر کنید تمام شود یا با دکمهٔ «❌ لغو بازی» آن را ببندید.'
     );
     return;
   }
 
-  // بدون مرحلهٔ انتخاب سطح: بازی مستقیم روی تختهٔ سخت (۹×۹ با ۲۱ مین) ساخته می‌شود
+  // بدون مرحلهٔ انتخاب سطح: بازی مستقیم روی تختهٔ سخت (۹×۸ با ۱۸ مین) ساخته می‌شود
   const difficulty = MS_BOARD;
+  const vsBot = where === 'private';
+
   const session: MsSession = {
     chatId,
     messageId: 0,
@@ -325,8 +363,20 @@ export async function handleMinesweeper(ctx: Context) {
     status: 'waiting',
     minesPlaced: false,
     outcome: null,
+    vsBot,
     createdAt: Date.now(),
   };
+
+  // در پیوی صندلی 🔵 آبی را خودِ ربات می‌گیرد و بازی همان لحظه شروع می‌شود؛
+  // مین‌ها هم همین‌جا چیده می‌شوند (کسی جز ربات و کاربر به تخته دسترسی ندارد).
+  if (vsBot) {
+    session.players.push({ id: BOT_ID, name: BOT_NAME, seat: 1, bot: true });
+    placeMsMines(session.board, difficulty.rows, difficulty.cols, difficulty.mines);
+    computeMsAdjacent(session.board, difficulty.rows, difficulty.cols);
+    session.minesPlaced = true;
+    session.status = 'playing';
+  }
+
   sessions.set(key, session);
 
   const messageId = await sendGameMessage(ctx, key, buildMsText(session), {
@@ -352,6 +402,10 @@ export async function handleMinesweeperAction(ctx: Context) {
 
   // ── پیوستن به بازی ──
   if (action === 'ms_join') {
+    if (session.vsBot) {
+      await ctx.answerCbQuery('🤖 صندلی آبی را خودِ ربات گرفته است؛ خانه‌ای را بزن.');
+      return;
+    }
     if (session.status !== 'waiting') {
       await ctx.answerCbQuery('بازی قبلاً شروع شده!');
       return;
@@ -380,6 +434,10 @@ export async function handleMinesweeperAction(ctx: Context) {
 
   // ── شروع بازی ──
   if (action === 'ms_start') {
+    if (session.vsBot) {
+      await ctx.answerCbQuery('🤖 بازی با ربات از همان اول شروع شده — یک خانه بزن.');
+      return;
+    }
     if (session.status !== 'waiting') {
       await ctx.answerCbQuery('بازی قبلاً شروع شده!');
       return;
@@ -404,7 +462,7 @@ export async function handleMinesweeperAction(ctx: Context) {
     const first = currentPlayer(session);
     await ctx.answerCbQuery(
       first
-        ? `🎮 شروع! نوبت اول با ${MS_EMOJI[colourForSeat(first.seat)]} ${safeName(first.name)}.`
+        ? `🎮 شروع! نوبت اول با ${MS_EMOJI[colourForSeat(first.seat)]} ${playerName(first)}.`
         : '🎮 شروع!'
     );
     await updateMsMessage(ctx, session);
@@ -413,7 +471,7 @@ export async function handleMinesweeperAction(ctx: Context) {
 
   // ── قوانین کامل (پیوی، تا گروه شلوغ نشود) ──
   if (action === 'ms_help') {
-    await sendGameRules(ctx, key, msRulesText(session.difficulty));
+    await sendGameRules(ctx, key, msRulesText(session.difficulty, session.vsBot));
     return;
   }
 
@@ -446,11 +504,23 @@ export async function handleMinesweeperAction(ctx: Context) {
       status: 'waiting',
       minesPlaced: false,
       outcome: null,
+      vsBot: session.vsBot,
       createdAt: Date.now(),
     };
+
+    if (fresh.vsBot) {
+      fresh.players.push({ id: BOT_ID, name: BOT_NAME, seat: 1, bot: true });
+      placeMsMines(fresh.board, difficulty.rows, difficulty.cols, difficulty.mines);
+      computeMsAdjacent(fresh.board, difficulty.rows, difficulty.cols);
+      fresh.minesPlaced = true;
+      fresh.status = 'playing';
+    }
+
     sessions.set(key, fresh);
 
-    await ctx.answerCbQuery('🔄 بازی جدید — منتظر بازیکن دیگر.');
+    await ctx.answerCbQuery(
+      fresh.vsBot ? '🔄 بازی تازه با 🤖 ربات — نوبت تو.' : '🔄 بازی جدید — منتظر بازیکن دیگر.'
+    );
     const messageId = await sendGameMessage(ctx, key, buildMsText(fresh), {
       parse_mode: 'Markdown',
       ...buildMsKeyboard(fresh),
@@ -483,7 +553,7 @@ async function handleMsCellTap(ctx: Context, session: MsSession, action: string)
   const turn = currentPlayer(session);
   if (!turn || tapperSeat !== turn.seat) {
     await ctx.answerCbQuery(
-      turn ? `⏳ نوبت ${colourBadge(turn)} ${safeName(turn.name)} است!` : '⏳ نوبتی در کار نیست.'
+      turn ? `⏳ نوبت ${colourBadge(turn)} ${playerName(turn)} است!` : '⏳ نوبتی در کار نیست.'
     );
     return;
   }
@@ -512,7 +582,7 @@ async function handleMsCellTap(ctx: Context, session: MsSession, action: string)
     if (cell.isMine) {
       const finder =
         cell.foundBy === null ? null : session.players.find((p) => p.seat === cell.foundBy);
-      const who = finder ? `${colourBadge(finder)} ${safeName(finder.name)}` : 'کسی';
+      const who = finder ? `${colourBadge(finder)} ${playerName(finder)}` : 'کسی';
       await ctx.answerCbQuery(`💣 این مین را ${who} پیدا کرده است.`);
       return;
     }
@@ -540,7 +610,11 @@ async function handleMsCellTap(ctx: Context, session: MsSession, action: string)
     }
 
     advanceTurn(session);
-    await ctx.answerCbQuery(`⛏️ ${faNum(chord.opened)} خانهٔ اطراف باز شد — نوبت نفر بعد. ${audit}`);
+    const afterChord = await botMovesAfterHuman(session);
+    await ctx.answerCbQuery(
+      turnMessage(`⛏️ ${faNum(chord.opened)} خانهٔ اطراف باز شد`, afterChord, session.vsBot) +
+        ` ${audit}`.trimEnd()
+    );
     if (await maybeFinishMs(ctx, session)) return;
     await updateMsMessage(ctx, session);
     return;
@@ -567,13 +641,82 @@ async function handleMsCellTap(ctx: Context, session: MsSession, action: string)
   }
 
   advanceTurn(session);
+  const afterSafe = await botMovesAfterHuman(session);
   await ctx.answerCbQuery(
-    tap.opened > 1
-      ? `⛏️ ${faNum(tap.opened)} خانه هم‌زمان باز شد — نوبت نفر بعد.`
-      : '⛏️ امن بود — نوبت نفر بعد.'
+    turnMessage(
+      tap.opened > 1 ? `⛏️ ${faNum(tap.opened)} خانه هم‌زمان باز شد` : '⛏️ امن بود',
+      afterSafe,
+      session.vsBot
+    )
   );
   if (await maybeFinishMs(ctx, session)) return;
   await updateMsMessage(ctx, session);
+}
+
+/**
+ * نوبت ربات در بازیِ پیوی.
+ * ربات تا وقتی مین پیدا می‌کند نوبتش را نگه می‌دارد (دقیقاً مثل بازیکنِ آدم) و
+ * با اولین خانهٔ امن نوبت را به کاربر برمی‌گرداند. پایانِ طبيعيِ بازی
+ * (همهٔ مین‌ها پیدا شده یا فقط مین‌ها پنهان‌اند) هم حلقه را می‌شکند تا
+ * maybeFinishMs اعلامش کند. هیچ‌وقت جای مین را از روی تخته نمی‌خواند؛
+ * chooseBotMsMove فقط عدد های *بازشده* را حساب می‌کند.
+ */
+async function botMovesAfterHuman(
+  session: MsSession
+): Promise<{ mines: number; opened: number }> {
+  const summary = { mines: 0, opened: 0 };
+  const bot = session.players.find((p) => p.bot);
+  if (!bot || session.status !== 'playing') return summary;
+
+  const { rows, cols, mines } = session.difficulty;
+  const skill = normalizeMsSkill(await getSetting('game_minesweeper_bot_difficulty'));
+
+  for (let step = 0; step < BOT_MAX_MOVES_PER_TURN; step++) {
+    const turn = currentPlayer(session);
+    if (!turn?.bot) break;
+
+    const state = msBoardState(session.board, rows, cols, mines);
+    if (state.allMinesFound) break;
+    if (state.hiddenLeft > 0 && state.hiddenLeft === state.minesLeft) break;
+
+    const move = chooseBotMsMove(session.board, rows, cols, skill);
+    if (!move) break;
+
+    const tap = tapMsCell(session.board, rows, cols, move.r, move.c, bot.seat);
+    if (tap.kind === 'mine') {
+      summary.mines++;
+      continue;
+    }
+    if (tap.kind === 'safe') {
+      summary.opened += tap.opened;
+      advanceTurn(session);
+      break;
+    }
+    // خانهٔ بسته‌ای پیدا نشد (تخته قفل است) — نوبت را رد می‌کنیم تا بازی
+    // روی سرِ ربات گیر نکند؛ کاربر خودش ادامه می‌دهد.
+    advanceTurn(session);
+    break;
+  }
+
+  // دفاع آخر: سقف حرکت خوردیم و هنوز نوبت ربات است
+  const rest = currentPlayer(session);
+  if (rest?.bot) advanceTurn(session);
+
+  return summary;
+}
+
+/** پیامِ callback: «نوبت رفت» در گروه، «رباط چند مین زد» در پیوی */
+function turnMessage(
+  head: string,
+  botResult: { mines: number; opened: number },
+  vsBot: boolean
+): string {
+  if (!vsBot) return `${head} — نوبت نفر بعد.`;
+  if (botResult.mines === 0 && botResult.opened === 0) return `${head} — نوبت تو.`;
+  const parts: string[] = [];
+  if (botResult.mines > 0) parts.push(`${faNum(botResult.mines)} مین پیدا کرد`);
+  if (botResult.opened > 0) parts.push(`${faNum(botResult.opened)} خانه باز کرد`);
+  return `🤖 ربات ${parts.join(' و ')} — نوبت تو.`;
 }
 
 /** پایان بازی: همهٔ مین‌ها پیدا شده، یا فقط مین‌ها پنهان مانده‌اند */

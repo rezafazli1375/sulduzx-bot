@@ -54,3 +54,38 @@ export function gbToBytes(gb: number): number {
 export function bytesToGb(bytes: number): number {
   return bytes / (1024 * 1024 * 1024);
 }
+
+// ─── ابزار «روزانه» ───────────────────────────
+// نسخهٔ ۲٫۰٫۰ با حذف کلمه‌یاب به lib منتقل شد؛ فال روز هم همین‌ها را صدا می‌زند.
+
+/** کلید روز بر اساس تاریخ تهران (+۳:۳۰) — نه نیمه‌شب سرور */
+export function tehranDateKey(now: Date = new Date()): string {
+  const shifted = new Date(now.getTime() + 3.5 * 60 * 60 * 1000);
+  return shifted.toISOString().slice(0, 10);
+}
+
+/** عددیِ قطعی از یک رشته: همان ورودی همیشه همان خروجی را می‌دهد */
+export function stableHash(text: string): number {
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) {
+    hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
+  }
+  return hash;
+}
+
+/** انتخاب قطعی یک عضو از مجموعه بر اساس کلید (روز، کاربر+روز و…) */
+export function pickBySeed<T>(pool: T[], seed: string): T | null {
+  if (pool.length === 0) return null;
+  return pool[stableHash(seed) % pool.length];
+}
+
+/**
+ * فارسی‌کردن رقم‌های یک عدد و جداکردن هزارگان با «،».
+ * متن‌های ربات همه فارسی‌اند، پس عدد لاتین وسط متن خواندن را سخت می‌کند.
+ */
+export function faNum(value: number): string {
+  const digits = '۰۱۲۳۴۵۶۷۸۹';
+  return Math.trunc(value)
+    .toLocaleString('en-US')
+    .replace(/[0-9]/g, (d) => digits[Number(d)]);
+}

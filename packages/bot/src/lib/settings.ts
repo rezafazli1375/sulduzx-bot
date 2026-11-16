@@ -89,52 +89,58 @@ const REQUIRED_DEFAULTS: Array<{
     description: 'بخش بازی‌ها فعال',
   },
   {
-    key: "game_hokm_enabled",
-    value: "true",
-    type: "BOOLEAN",
-    description: "بازی حکم فعال",
+    key: 'games_private_vs_bot_enabled',
+    value: 'true',
+    type: 'BOOLEAN',
+    description: 'بازی در گفتگوی خصوصی با خودِ ربات (دوز، مین‌روب، جرعت و حقیقت)',
   },
   {
-    key: "game_truth_or_dare_enabled",
-    value: "true",
-    type: "BOOLEAN",
-    description: "بازی جرعت و حقیقت فعال",
+    key: 'game_truth_or_dare_enabled',
+    value: 'true',
+    type: 'BOOLEAN',
+    description: 'بازی جرعت و حقیقت فعال',
   },
   {
-    key: "game_tic_tac_toe_enabled",
-    value: "true",
-    type: "BOOLEAN",
-    description: "بازی دوز فعال",
+    key: 'game_truth_or_dare_nsfw',
+    value: 'true',
+    type: 'BOOLEAN',
+    description: 'دستهٔ «+۱۸» در جرعت و حقیقت؛ خاموش یعنی فقط سؤال‌های معمولی پرسیده می‌شود',
   },
   {
-    key: "game_minesweeper_enabled",
-    value: "true",
-    type: "BOOLEAN",
-    description: "بازی مین‌روب فعال",
+    key: 'game_tic_tac_toe_enabled',
+    value: 'true',
+    type: 'BOOLEAN',
+    description: 'بازی دوز فعال',
   },
   {
-    key: "game_wordle_enabled",
-    value: "true",
-    type: "BOOLEAN",
-    description: "بازی کلمه‌یاب فعال",
+    key: 'game_tic_tac_toe_bot_difficulty',
+    value: 'normal',
+    type: 'STRING',
+    description: 'سختی ربات در دوزِ پیوی: easy، normal یا hard',
   },
   {
-    key: "game_wordle_length",
-    value: "5",
-    type: "NUMBER",
-    description: "طول کلمه در بازی کلمه‌یاب (۴ تا ۸)",
+    key: 'game_minesweeper_enabled',
+    value: 'true',
+    type: 'BOOLEAN',
+    description: 'بازی مین‌روب فعال',
   },
   {
-    key: "game_mench_enabled",
-    value: "true",
-    type: "BOOLEAN",
-    description: "بازی منچ فعال",
+    key: 'game_minesweeper_bot_difficulty',
+    value: 'normal',
+    type: 'STRING',
+    description: 'سختی ربات در مین‌روبِ پیوی: easy، normal یا hard',
   },
   {
-    key: "game_scala_enabled",
-    value: "true",
-    type: "BOOLEAN",
-    description: "بازی اسکالا فعال",
+    key: 'fortune_enabled',
+    value: 'true',
+    type: 'BOOLEAN',
+    description: 'دکمهٔ «فال روز» در منوی اصلی فعال',
+  },
+  {
+    key: 'fortune_points',
+    value: '2',
+    type: 'NUMBER',
+    description: 'امتیاز دیدن فال روز (۰ یعنی امتیازی ندهد)',
   },
   {
     key: 'music_enabled',
@@ -159,48 +165,6 @@ const REQUIRED_DEFAULTS: Array<{
     value: 'true',
     type: 'BOOLEAN',
     description: 'پخش خودکار موزیک در ساعت‌های تعیین‌شده (بخش موزیک پنل) فعال',
-  },
-  {
-    key: 'voicecall_enabled',
-    value: 'true',
-    type: 'BOOLEAN',
-    description: 'رادیوی ویس‌کال: دستور /voicecall در گروه فعال باشد',
-  },
-  {
-    key: 'voicecall_quality',
-    value: 'high',
-    type: 'STRING',
-    description: 'کیفیت صدای استریم: low، medium، high یا studio',
-  },
-  {
-    key: 'voicecall_volume',
-    value: '100',
-    type: 'NUMBER',
-    description: 'صدای پخش (۱ تا ۲۰۰؛ ۱۰۰ یعنی صدای اصلی آهنگ)',
-  },
-  {
-    key: 'voicecall_max_minutes',
-    value: '120',
-    type: 'NUMBER',
-    description: 'سقف زمان هر رادیو به دقیقه (۰ یعنی بدون سقف)',
-  },
-  {
-    key: 'voicecall_max_streams',
-    value: '5',
-    type: 'NUMBER',
-    description: 'حداکثر گروه‌هایی که هم‌زمان روی این سرور پخش ویس‌کال دارند',
-  },
-  {
-    key: 'voicecall_auto_start',
-    value: 'true',
-    type: 'BOOLEAN',
-    description: 'اگر ویس‌کال گروه بسته بود، حساب تلگرام خودش آن را باز کند',
-  },
-  {
-    key: 'voicecall_account',
-    value: '',
-    type: 'STRING',
-    description: 'شناسهٔ حساب تلگرامی که پخش می‌کند (خالی = اولین حساب آماده)',
   },
   {
     key: 'reward_points_enabled',
@@ -277,9 +241,12 @@ const REQUIRED_DEFAULTS: Array<{
 ];
 
 /**
- * تنظیماتی که از نسخهٔ ۱٫۹٫۰ دیگر وجود ندارند (پخش در ویس‌کال حذف شد).
+ * تنظیماتی که در نسخه‌های بعدی حذف شده‌اند.
  * در نصب‌های قدیمی سطرهایشان در دیتابیس می‌ماند و در صفحهٔ تنظیمات دیده می‌شود،
  * پس هنگام بالا آمدن ربات پاک می‌شوند.
+ *
+ * ۱٫۹٫۰ — نخستین حذف پخش در ویس‌کال
+ * ۲٫۰٫۰ — حذف کامل رادیوی ویس‌کال و چهار بازی (کلمه‌یاب، حکم، منچ، اسکالا)
  */
 export const REMOVED_SETTINGS = [
   'music_voice_enabled',
@@ -287,6 +254,18 @@ export const REMOVED_SETTINGS = [
   'music_voice_auto_start',
   'music_voice_max_streams',
   'music_voice_quality',
+  'voicecall_enabled',
+  'voicecall_quality',
+  'voicecall_volume',
+  'voicecall_max_minutes',
+  'voicecall_max_streams',
+  'voicecall_auto_start',
+  'voicecall_account',
+  'game_hokm_enabled',
+  'game_wordle_enabled',
+  'game_wordle_length',
+  'game_mench_enabled',
+  'game_scala_enabled',
 ];
 
 export async function ensureDefaultSettings(): Promise<void> {

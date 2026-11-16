@@ -5,20 +5,39 @@ import { getBotId } from '../../lib/bot-context.js';
 import { findUserByCtx } from '../../lib/user.js';
 import { mainMenuKeyboard } from '../../lib/ui.js';
 
-// ─── Group Check ─────────────────────────────
+// ─── Group / private-vs-bot gate ─────────────
+export type GameChatMode = 'group' | 'private';
+
+/**
+ * بازی در کجا بازی می‌شود؟
+ *
+ * تا نسخهٔ ۱٫۱۵٫۰ بازی‌ها فقط در گروه بودند. از نسخهٔ ۲٫۰٫۰ هر سهٔ باقی‌مانده
+ * (دوز، مین‌روب، جرعت و حقیقت) در *گفتگوی خصوصی* هم بازی می‌شوند و حریف،
+ * خودِ ربات است. اگر تنظیم `games_private_vs_bot_enabled` در پنل خاموش باشد،
+ * رفتار قدیمی برمی‌گردد: پیام «فقط در گروه بازی می‌شود».
+ *
+ * `null` یعنی «اینجا بازی نمی‌شود» و پیام لازم را فرستاده‌ایم.
+ */
+export async function gameChatMode(ctx: Context, gameName: string): Promise<GameChatMode | null> {
+  if (ctx.chat?.type !== 'private') return 'group';
+  if (await getSettingBool('games_private_vs_bot_enabled')) return 'private';
+
+  const botInfo = await ctx.telegram.getMe();
+  await ctx.reply(
+    `🎮 *${gameName}* فقط در *گروه* بازی می‌شود.\n` +
+      `ربات @${botInfo.username} را به گروهتان اضافه کنید و آنجا بازی را شروع کنید.`,
+    { parse_mode: 'Markdown', ...(await mainMenuKeyboard()) }
+  );
+  return null;
+}
+
+/**
+ * سازگاری با نسخهٔ قبل: `true` یعنی بازی مجاز است (گروه، یا پیوی وقتی حالت
+ * «مقابل ربات» روشن است). بازی‌های ۲٫۰٫۰ مستقیم gameChatMode را صدا می‌زنند
+ * چون باید بدانند حریف انسان است یا ربات.
+ */
 export async function requireGroup(ctx: Context, gameName: string): Promise<boolean> {
-  const chatType = ctx.chat?.type;
-  if (chatType === 'private') {
-    const botInfo = await ctx.telegram.getMe();
-    // دستور مالک: متن‌های بلند بازی‌ها کوتاه شوند — اینجا فقط جملهٔ لازم.
-    await ctx.reply(
-      `🎮 *${gameName}* فقط در *گروه* بازی می‌شود.\n` +
-        `ربات @${botInfo.username} را به گروهتان اضافه کنید و آنجا بازی را شروع کنید.`,
-      { parse_mode: 'Markdown', ...await mainMenuKeyboard() }
-    );
-    return false;
-  }
-  return true;
+  return (await gameChatMode(ctx, gameName)) !== null;
 }
 
 // ─── Short lobby + rules on demand ───────────
@@ -63,6 +82,10 @@ export async function sendGameRules(
 // پاک می‌شوند تا گروه پر از تخته‌های مرده و پیام‌های تکراری نشود.
 // اگر ربات اجازهٔ حذف پیام را نداشته باشد، لااقل دکمه‌های مرده از روی پیام
 // برداشته می‌شود تا کسی روی خانه‌های بازی قبلی کلیک نکند.
+//
+// دفتر *فقط برای گروه* است. از نسخهٔ ۲٫۰٫۰ بازی در گفتگوی خصوصی هم بازی می‌شود
+// و آن‌جا پاک‌سازی معنایی ندارد: تاریخچهٔ بازی پیشِ خودِ کاربر می‌ماند و هیچ
+// پیامی ۹۰ ثانیه بعد از پایان بازی ناپدید نمی‌شود.
 
 /** فاصلهٔ اعلام نتیجه تا پاک‌سازی پیام‌ها */
 export const GAME_RESULT_PURGE_DELAY_MS = 90_000;
@@ -80,12 +103,23 @@ interface GameLedger {
 
 const ledgers = new Map<string, GameLedger>();
 
+/**
+ * شناسهٔ گروه و کانال در تلگرام منفی است (مثلاً `-100…`) و شناسهٔ گفتگوی
+ * خصوصیِ کاربر با ربات مثبت. برای همین همین‌جا کافی است؛ نیازی به خواندن
+ * `chat.type` نیست.
+ */
+function isGroupChatId(chatId: number): boolean {
+  return typeof chatId === 'number' && chatId < 0;
+}
+
 export function trackGameMessage(
   key: string,
   chatId: number,
   messageId: number,
   telegram?: any
 ): void {
+  // در پیوی دفتر نمی‌شود؛ پس `purgeGameMessages` هم چیزی برای حذف پیدا نمی‌کند.
+  if (!isGroupChatId(chatId)) return;
   const ledger = ledgers.get(key);
   if (ledger) {
     ledger.messages.add(messageId);
@@ -191,6 +225,7 @@ export function dropGameLedger(key: string): void {
  * بازی جدیدی روی همان کلید شروع شود، پیام‌هایش هرگز پاک نخواهد شد.
  * `delayMs` صفر باشد، بی‌درنگ پاک می‌شود (برای تست). بازی‌ها این تابع را با
  * `void` صدا می‌زنند؛ یعنی منتظر ماندن برای پاک‌سازی، نوبت بعدی را عقب نمی‌اندازد.
+ * در گفتگوی خصوصی هیچ دفتری ثبت نشده، پس این تابع بی‌اثر است و `۰` برمی‌گرداند.
  */
 export async function purgeGameMessages(
   telegram: any,

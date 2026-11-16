@@ -1,20 +1,24 @@
 import { Context, Markup } from 'telegraf';
 import { prisma } from '../../lib/prisma.js';
+import { getSetting } from '../../lib/settings.js';
 import {
   GAME_CANCEL_PURGE_DELAY_MS,
   GAME_RESULT_PURGE_DELAY_MS,
   checkGameChannelJoin,
+  gameChatMode,
   purgeGameMessages,
-  requireGroup,
   sendGameMessage,
 } from './utils.js';
 import {
   TttBoard,
+  TttDifficulty,
   TttMode,
-  getTttMode,
+  chooseBotMove,
   createTttBoard,
   checkTttWinner,
+  getTttMode,
   isTttBoardFull,
+  normalizeTttDifficulty,
 } from './tic-tac-toe-logic.js';
 
 // ─── Types ───────────────────────────────────
@@ -35,8 +39,22 @@ interface TttSession {
   status: 'choosing' | 'waiting' | 'playing' | 'finished';
   winnerId: number | null;
   winLine: [number, number][];
+  /**
+   * بازی در گفتگوی خصوصی (نسخهٔ ۲٫۰٫۰): حریفِ کاربر خودِ ربات است، پس
+   * صفِ انتظار و دکمهٔ «پیوستن به بازی» لازم نیست و بعد از هر حرکتِ
+   * کاربر، ربات یک حرکت می‌کند.
+   */
+  vsBot: boolean;
   createdAt: number;
 }
+
+/**
+ * شناسهٔ بازیکن-ربات. آیدی تلگرام همیشه مثبت است، پس ‎-۱› هیچ‌وقت با
+ * کاربر واقعی قاطی نمی‌شود؛ برای mention نکردنِ ربات و ندادنِ امتیاز به او
+ * از همین مقدار استفاده می‌کنیم.
+ */
+const BOT_ID = -1;
+const BOT_NAME = 'ربات';
 
 const sessions = new Map<string, TttSession>();
 
@@ -44,16 +62,24 @@ function sessionKey(chatId: number): string {
   return `ttt:${chatId}`;
 }
 
+function isBot(player: TttPlayer | null): boolean {
+  return !!player && player.id === BOT_ID;
+}
+
 // ─── Keyboard ────────────────────────────────
 function buildGameKeyboard(session: TttSession): any {
   if (session.status === 'choosing') {
-    return Markup.inlineKeyboard([
+    const rows: any[][] = [
       [
         Markup.button.callback('🟦 کلاسیک ۳×۳', 'ttt_mode_classic'),
         Markup.button.callback('🟦 حرفه‌ای ۶×۷', 'ttt_mode_pro'),
       ],
-      [Markup.button.callback('❌ لغو', 'ttt_cancel')],
-    ]);
+    ];
+    if (session.vsBot) {
+      rows.push([Markup.button.callback('🔙 بازگشت به منو', 'games')]);
+    }
+    rows.push([Markup.button.callback('❌ لغو', 'ttt_cancel')]);
+    return Markup.inlineKeyboard(rows);
   }
 
   const { rows, cols } = session.mode;
@@ -98,25 +124,30 @@ function buildGameKeyboard(session: TttSession): any {
 }
 
 // ─── Message text ────────────────────────────
+function playerLine(player: TttPlayer | null, waitingLabel: string): string {
+  if (!player) return waitingLabel;
+  const symbol = player.mark === 'X' ? '❌' : '⭕';
+  if (isBot(player)) return `🤖 ${BOT_NAME} — ${symbol}`;
+  return `${mentionUser(player.id, player.name)} — ${symbol}`;
+}
+
 function buildGameText(session: TttSession): string {
   const lines: string[] = [];
-  lines.push(`❌⭕ *بازی دوز — ${session.mode.label}*`);
+  lines.push(`❌⭕ *بازی دوز — ${session.mode.label}*${session.vsBot ? ' (مقابل ربات)' : ''}`);
   lines.push('');
   lines.push(`📋 ${session.mode.description}`);
   lines.push('');
 
-  const x = session.playerX
-    ? `${mentionUser(session.playerX.id, session.playerX.name)} — ❌`
-    : '❌ — منتظر بازیکن…';
-  const o = session.playerO
-    ? `${mentionUser(session.playerO.id, session.playerO.name)} — ⭕`
-    : '⭕ — منتظر بازیکن…';
-  lines.push(x);
-  lines.push(o);
+  lines.push(playerLine(session.playerX, '❌ — منتظر بازیکن…'));
+  lines.push(playerLine(session.playerO, '⭕ — منتظر بازیکن…'));
   lines.push('');
 
   if (session.status === 'choosing') {
-    lines.push('🎯 *حالت:* کلاسیک ۳×۳ (سریع) یا حرفه‌ای ۶×۷ (پنج مهرهٔ پشت‌سرهم)');
+    lines.push(
+      session.vsBot
+        ? '🎯 *حالت:* کلاسیک ۳×۳ (سریع) یا حرفه‌ای ۶×۷ (پنج مهرهٔ پشت‌سرهم) — حریف: 🤖 ربات'
+        : '🎯 *حالت:* کلاسیک ۳×۳ (سریع) یا حرفه‌ای ۶×۷ (پنج مهرهٔ پشت‌سرهم)'
+    );
     return lines.join('\n');
   }
 
@@ -132,24 +163,35 @@ function buildGameText(session: TttSession): string {
   if (session.status === 'finished') {
     if (session.winnerId) {
       const winner = session.playerX?.id === session.winnerId ? session.playerX : session.playerO;
-      lines.push(`🏆 *برنده:* ${winner ? mentionUser(winner.id, winner.name) : '—'}`);
-      lines.push(`⭐️ ${session.mode.points} امتیاز دریافت شد!`);
+      if (winner && isBot(winner)) {
+        lines.push('🤖 *ربات برد!* — دفعهٔ بعد سخت‌تر بازی می‌کنیم.');
+      } else {
+        lines.push(`🏆 *برنده:* ${winner ? playerLine(winner, '—') : '—'}`);
+        lines.push(`⭐️ ${session.mode.points} امتیاز دریافت شد!`);
+      }
     } else {
       lines.push('🤝 *بازی مساوی شد!*');
-      lines.push('⭐️ ۱۰ امتیاز برای هر دو بازیکن');
+      lines.push(
+        session.vsBot ? '⭐️ ۱۰ امتیاز برای تو' : '⭐️ ۱۰ امتیاز برای هر دو بازیکن'
+      );
     }
     return lines.join('\n');
   }
 
   const turn = session.currentTurn === 'X' ? session.playerX : session.playerO;
   const symbol = session.currentTurn === 'X' ? '❌' : '⭕';
-  lines.push(`🎯 *نوبت:* ${turn ? mentionUser(turn.id, turn.name) : '—'} ${symbol}`);
+  lines.push(`🎯 *نوبت:* ${turn ? playerLine(turn, '—') : '—'} ${symbol}`);
+  if (session.vsBot) {
+    lines.push('');
+    lines.push('💡 خانهٔ دلخواهت را بزن؛ ربات بلافاصله جواب می‌دهد.');
+  }
   return lines.join('\n');
 }
 
 // ─── Start Tic Tac Toe ───────────────────────
 export async function handleTicTacToe(ctx: Context) {
-  if (!(await requireGroup(ctx, 'دوز'))) return;
+  const where = await gameChatMode(ctx, 'دوز');
+  if (!where) return;
   if (!(await checkGameChannelJoin(ctx))) return;
 
   const chatId = ctx.chat!.id;
@@ -173,6 +215,7 @@ export async function handleTicTacToe(ctx: Context) {
     status: 'choosing',
     winnerId: null,
     winLine: [],
+    vsBot: where === 'private',
     createdAt: Date.now(),
   };
   sessions.set(key, session);
@@ -221,24 +264,37 @@ export async function handleTicTacToeAction(ctx: Context) {
     session.currentTurn = 'X';
     session.winnerId = null;
     session.winLine = [];
-    session.status = 'waiting';
 
-    // آغازگر بازی به‌صورت خودکار بازیکن اول (❌) می‌شود
-    if (!session.playerX) {
-      session.playerX = {
-        id: userId,
-        name: ctx.from!.first_name || 'بازیکن ۱',
-        mark: 'X',
-      };
+    if (session.vsBot) {
+      // در پیوی جایی برای صبر کردن نیست: کاربر ❌، ربات ⭕ و بازی شروع می‌شود
+      session.playerX = { id: userId, name: ctx.from!.first_name || 'بازیکن ۱', mark: 'X' };
+      session.playerO = { id: BOT_ID, name: BOT_NAME, mark: 'O' };
+      session.status = 'playing';
+      await ctx.answerCbQuery(
+        `🎯 حالت: ${mode.label} — ${await botDifficultyLabel()} .نوبت تو با ❌`
+      );
+    } else {
+      session.status = 'waiting';
+      // آغازگر بازی به‌صورت خودکار بازیکن اول (❌) می‌شود
+      if (!session.playerX) {
+        session.playerX = {
+          id: userId,
+          name: ctx.from!.first_name || 'بازیکن ۱',
+          mark: 'X',
+        };
+      }
+      await ctx.answerCbQuery(`🎯 حالت: ${mode.label}`);
     }
-
-    await ctx.answerCbQuery(`🎯 حالت: ${mode.label}`);
     await updateGameMessage(ctx, session);
     return;
   }
 
   // ── پیوستن ──
   if (action === 'ttt_join') {
+    if (session.vsBot) {
+      await ctx.answerCbQuery('🤖 در این بازی حریف تو خودِ ربات است؛ خانه‌ای را انتخاب کن.');
+      return;
+    }
     if (session.status !== 'waiting') {
       await ctx.answerCbQuery('بازی قبلاً شروع شده!');
       return;
@@ -327,13 +383,15 @@ export async function handleTicTacToeAction(ctx: Context) {
     session.playerX = null;
     session.playerO = null;
     session.currentTurn = 'X';
-    session.status = 'waiting';
+    session.status = session.vsBot ? 'choosing' : 'waiting';
     session.winnerId = null;
     session.winLine = [];
     session.board = createTttBoard(session.mode.rows, session.mode.cols);
     await reopenTttBoard(ctx, key, session);
 
-    await ctx.answerCbQuery('🔄 بازی جدید آماده شد — منتظر بازیکن!');
+    await ctx.answerCbQuery(
+      session.vsBot ? '🔄 بازی جدید — حالت را انتخاب کن.' : '🔄 بازی جدید آماده شد — منتظر بازیکن!'
+    );
     await updateGameMessage(ctx, session);
     return;
   }
@@ -374,7 +432,7 @@ export async function handleTicTacToeAction(ctx: Context) {
       return;
     }
     if (player.id !== userId) {
-      await ctx.answerCbQuery('⏳ نوبت شما نیست!');
+      await ctx.answerCbQuery(session.vsBot ? '🤖 نوبت ربات است؛ صبر کن.' : '⏳ نوبت شما نیست!');
       return;
     }
 
@@ -385,21 +443,17 @@ export async function handleTicTacToeAction(ctx: Context) {
 
     session.board[row][col] = session.currentTurn;
 
-    const win = checkTttWinner(session.board, rows, cols, session.mode.winLength);
-    const full = isTttBoardFull(session.board, rows, cols);
+    if (await finishIfOver(ctx, session, '🏆 بازی تمام شد!', '🤝 مساوی!')) return;
 
-    if (win || full) {
-      session.status = 'finished';
-      if (win) {
-        session.winLine = win.line;
-        const winner = win.mark === 'X' ? session.playerX : session.playerO;
-        session.winnerId = winner?.id ?? null;
-      }
+    // در پیوی، ربات همان‌جا جواب می‌دهد: نوبت را به ⭕ می‌دهیم، یک حرکت
+    // می‌کند و بعد از بررسی پایان، نوبت را به کاربر برمی‌گردانیم.
+    if (session.vsBot) {
+      session.currentTurn = session.currentTurn === 'X' ? 'O' : 'X';
+      await playBotTurn(session);
+      if (await finishIfOver(ctx, session, '🏆 بازی تمام شد!', '🤝 مساوی!')) return;
+      session.currentTurn = session.currentTurn === 'X' ? 'O' : 'X';
 
-      await awardTttPoints(ctx, session);
-      // نتیجه مدت کوتاهی روی صفحه می‌ماند، بعد پیام بازی از گروه پاک می‌شود
-      void purgeGameMessages(ctx.telegram, key, GAME_RESULT_PURGE_DELAY_MS);
-      await ctx.answerCbQuery(win ? '🏆 بازی تمام شد!' : '🤝 مساوی!');
+      await ctx.answerCbQuery('🤖 ربات جواب داد — نوبت تو.');
       await updateGameMessage(ctx, session);
       return;
     }
@@ -410,11 +464,59 @@ export async function handleTicTacToeAction(ctx: Context) {
   }
 }
 
+/**
+ * یک حرکت برای ربات. تخته و نوبت را تغییر می‌دهد و پیامی نمی‌فرستد؛
+ * فراخوان بعد از هر حرکتِ کاربر آن را صدا می‌زند و بعد نتیجه را چک می‌کند.
+ */
+async function playBotTurn(session: TttSession): Promise<void> {
+  const botMark: 'X' | 'O' = session.currentTurn;
+  const difficulty = normalizeTttDifficulty(await getSetting('game_tic_tac_toe_bot_difficulty'));
+  const move = chooseBotMove(
+    session.board,
+    session.mode.rows,
+    session.mode.cols,
+    session.mode.winLength,
+    botMark,
+    difficulty
+  );
+  if (!move) return;
+  session.board[move[0]][move[1]] = botMark;
+}
+
+/** پایان بازی (برد یا پر شدن تخته) را بررسی و ثبت می‌کند؛ true یعنی تمام شد */
+async function finishIfOver(
+  ctx: Context,
+  session: TttSession,
+  winNotice: string,
+  drawNotice: string
+): Promise<boolean> {
+  const { rows, cols } = session.mode;
+  const win = checkTttWinner(session.board, rows, cols, session.mode.winLength);
+  const full = isTttBoardFull(session.board, rows, cols);
+  if (!win && !full) return false;
+
+  session.status = 'finished';
+  if (win) {
+    session.winLine = win.line;
+    const winner = win.mark === 'X' ? session.playerX : session.playerO;
+    session.winnerId = winner?.id ?? null;
+  }
+
+  await awardTttPoints(ctx, session);
+  // نتیجه مدت کوتاهی روی صفحه می‌ماند، بعد پیام بازی از چت پاک می‌شود
+  void purgeGameMessages(ctx.telegram, sessionKey(session.chatId), GAME_RESULT_PURGE_DELAY_MS);
+  await ctx.answerCbQuery(win ? winNotice : drawNotice);
+  await updateGameMessage(ctx, session);
+  return true;
+}
+
 async function awardTttPoints(ctx: Context, session: TttSession) {
   const botId = (ctx as any).botId;
 
   const players = [session.playerX, session.playerO].filter(Boolean) as TttPlayer[];
   for (const player of players) {
+    // ربات امتیاز نمی‌گیرد؛ باختِ کاربر هم جایزه‌ای ندارد
+    if (isBot(player)) continue;
     const amount =
       session.winnerId === null
         ? 10
@@ -448,7 +550,7 @@ async function awardTttPoints(ctx: Context, session: TttSession) {
 
 /**
  * تختهٔ بازی قبلی یا پاک شده یا در نوبت پاک شدن است؛ برای «دوز» تازه یک پیام
- * تازه در گروه می‌فرستد و همان پیام را به عنوان تختهٔ فعلی ثبت می‌کند.
+ * تازه در چت می‌فرستد و همان پیام را به عنوان تختهٔ فعلی ثبت می‌کند.
  */
 async function reopenTttBoard(ctx: Context, key: string, session: TttSession): Promise<void> {
   session.createdAt = Date.now();
@@ -473,13 +575,24 @@ async function updateGameMessage(ctx: Context, session: TttSession) {
     }
     await ctx.editMessageText(buildGameText(session), {
       parse_mode: 'Markdown',
-      ...buildGameKeyboard(session),
+      ...buildGameKeyboard(session)
     });
   } catch {}
 }
 
 function mentionUser(userId: number, name: string): string {
   return `[${name}](tg://user?id=${userId})`;
+}
+
+/** برچسبِ فارسیِ سختیِ ربات، همان چیزی که در پنل تنظیم می‌شود */
+async function botDifficultyLabel(): Promise<string> {
+  const difficulty = normalizeTttDifficulty(await getSetting('game_tic_tac_toe_bot_difficulty'));
+  const label: Record<TttDifficulty, string> = {
+    easy: 'آسان',
+    normal: 'معمولی',
+    hard: 'سخت',
+  };
+  return `سختی ربات: ${label[difficulty]}`;
 }
 
 // Cleanup expired sessions

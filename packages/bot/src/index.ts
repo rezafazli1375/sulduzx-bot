@@ -6,7 +6,6 @@ import { startServer } from './server/index.js';
 import { prisma } from './lib/prisma.js';
 import { ensureDefaultSettings } from './lib/settings.js';
 import { startMusicScheduler, stopMusicScheduler } from './lib/music-schedule.js';
-import { startRadioLoop, stopRadioLoop } from './bot/voicecall.js';
 import { startRewardNoticeSweeper, stopRewardNoticeSweeper } from './lib/reward-notice.js';
 import { startBackupScheduler, stopBackupScheduler } from './lib/backup-scheduler.js';
 import { ensureDefaultMenuButtons } from './bot/start.js';
@@ -41,12 +40,6 @@ async function main() {
   // همان ربات نیاز دارند. اجرای جا‌مانده در زمان استارت هم همان لحظه بررسی می‌شود.
   startMusicScheduler();
 
-  // حلقهٔ رادیوی ویس‌کال: بعد از ربات‌ها، چون ویرایش کارت گروه به نمونهٔ زندهٔ
-  // همان ربات نیاز دارد. اگر سرویس sulduz-voice پایین باشد فقط خطا می‌گیرد و
-  // بعد از چند بار نرسیدن، رادیوهای باز را خاموش می‌کند.
-  startRadioLoop();
-  console.log('Voice-call radio loop started');
-
   // زمان‌بندی بکاپ خودکار: هر ۶۰ ثانیه بررسی می‌کند آیا زمان اجرا رسیده است.
   startBackupScheduler();
   console.log('Backup scheduler started');
@@ -72,7 +65,6 @@ process.on('uncaughtException', (error: Error) => {
 process.on('SIGTERM', async () => {
   console.log('Shutting down...');
   stopMusicScheduler();
-  stopRadioLoop();
   stopRewardNoticeSweeper();
   stopBackupScheduler();
   await stopAllBots();
